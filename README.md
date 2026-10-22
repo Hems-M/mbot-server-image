@@ -8,10 +8,10 @@ This repository has the image itself (as a download), the scripts that build it,
 
 ## Download
 
-**Release 2026-10-22:** `2026-10-22-MBOT-UBUNTU-SERVER_IMAGE.img.xz` (2.4 GB, 12 GB on the SD card)
+**Release 2026-10-22:** `2026-10-22-MBOT-UBUNTU-SERVER_IMAGE.img.xz` (2.44 GB, 12 GB on the SD card)
 
 - Download: *link to be added*
-- Checksum: `2026-10-22-MBOT-UBUNTU-SERVER_IMAGE.img.xz.sha256` next to the image
+- SHA256: `1af1148410ae8aec73227b72c2d04822c77c20ffad5d846ec118bd40ea79dfe8`
 
 Check the download before flashing (macOS: `shasum -a 256`, Linux: `sha256sum`):
 
