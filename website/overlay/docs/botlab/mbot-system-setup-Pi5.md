@@ -58,7 +58,7 @@ Then save the file. Now you can eject the SD card.
     </a>
 
     - The first boot takes longer than later boots.
-    - If no Wi-Fi is found, the bottom line shows `192.168.3.1` with `AP`: the MBot runs its own access point.
+    - If no Wi-Fi is found, the OLED shows `192.168.3.1` with `AP` at the top right: the MBot runs its own access point.
     - If the bottom line of the OLED turns white with a warning triangle (or flashes), the OLED also shows a `WARNING` or `ERROR` card that says what is wrong and what to do (for example "Pico not connected" or "Battery low"). Run `mbot health` for the details.
 
 
@@ -85,7 +85,7 @@ Then save the file. Now you can eject the SD card.
 5. When prompted for your unique name and password, use the 550 course credentials, it will be distributed during lab. Avoid using your own UM credentials for your privacy safety.
 6. After entering your credentials, your SSH session will freeze or disconnect during the process, that is expected. Close the terminal and wait for about 1 minute. Check the OLED screen to see if the IP address has changed from `192.168.X.X` to a different one. This indicates that the MBot has successfully connected to the Internet.
    - If the access point comes back instead (the OLED shows `192.168.3.1` with `AP` again), connect to it again, SSH in, and run `sudo mwireless-setup --status` to see what went wrong. You might have typo when input the UM account password.
-   - If the OLED screen says "No IP yet" or "! CHECK ROBOT ... No IP address" and has been that way for over two minutes, you aren't connected to the network, find GSIs and ask to connect to an external monitor.
+   - If the OLED shows "No IP address" (or a "No network" error card) for over two minutes, you aren't connected to the network, find GSIs and ask to connect to an external monitor.
 
 
 ### 4.2 Connect to the Internet at Home
