@@ -21,7 +21,7 @@ The following items are needed:
 
 ## Set up RPi 5 System
 ### 1. Flash the image
-1. Download the custom image `2026-10-22-MBOT-UBUNTU-SERVER_IMAGE.img.xz` from this [link](#) to your laptop. (Course staff: replace `#` with the download link.)
+1. Download the custom image `2026-10-22-MBOT-UBUNTU-SERVER_IMAGE.img.xz` from this [link](https://www.dropbox.com/scl/fo/2x70dspqzdd3rrxu60g9n/AIrzrIsXB5RSlizuFKRoO2U?rlkey=6zx5hzsry09gxthtzed7afu9s&st=3z4jw5jq&dl=0) to your laptop.
 2. Download [Balena Etcher](https://etcher.balena.io/) to your laptop, it is a tool to flash the OS image to the SD card. Plug in the SD card to your laptop using SD card reader then following the steps in Balena Etcher. (The download is 2.5 GB and expands to 12 GB on the card, this can take 10 min).
 
 Once you have the SD card with the OS image flashed on it, don't insert the SD card in the Pi 5 yet, continue to the next step.
