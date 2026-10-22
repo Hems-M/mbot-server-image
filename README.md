@@ -10,7 +10,7 @@ This repository has the image itself (as a download), the scripts that build it,
 
 **Release 2026-10-22:** `2026-10-22-MBOT-UBUNTU-SERVER_IMAGE.img.xz` (2.44 GB, 12 GB on the SD card)
 
-- Download: *link to be added*
+- Download: [Click here!](https://www.dropbox.com/scl/fo/2x70dspqzdd3rrxu60g9n/AIrzrIsXB5RSlizuFKRoO2U?rlkey=6zx5hzsry09gxthtzed7afu9s&st=3z4jw5jq&dl=0)
 - SHA256: `1af1148410ae8aec73227b72c2d04822c77c20ffad5d846ec118bd40ea79dfe8`
 
 Check the download before flashing (macOS: `shasum -a 256`, Linux: `sha256sum`):
@@ -105,49 +105,3 @@ Clone with the submodules:
 ```bash
 git clone --recurse-submodules https://github.com/Hems-M/mbot-server-image.git
 ```
-
-Apart from the firmware fork, the submodules are the MBot project's repositories, unchanged. The image build copies files from them; changes to their files on the robot are made by the build (see `docs/build-notes.md`).
-
-## Change the firmware
-
-The firmware submodule is your own fork, so changes go there and this repository records which commit to use:
-
-```bash
-cd upstream/mbot_firmware_ros
-git switch main                      # submodules start detached
-# edit, build and test, then:
-git commit -am "Describe the change"
-git push                             # to Hems-M/mbot_firmware_ros
-cd ../..
-git add upstream/mbot_firmware_ros   # this repository now uses the new commit
-git commit -m "firmware: describe the change"
-git push
-```
-
-To bring in new commits from the MBot project's repository (remote `mbot-project`; after a fresh clone add it once with `git remote add mbot-project https://github.com/mbot-project/mbot_firmware_ros.git`):
-
-```bash
-cd upstream/mbot_firmware_ros
-git fetch mbot-project && git merge mbot-project/main && git push
-```
-
-Then commit the new submodule commit in this repository as above.
-
-## Build the image yourself
-
-Needs a Mac with Apple silicon or an arm64 Linux machine, Docker (on macOS for example with Colima), about 40 GB of free disk, and the Ubuntu base image:
-
-1. Next to this repository, make a folder `images/` with `ubuntu-24.04.3-preinstalled-server-arm64+raspi.img.xz` from [cdimage.ubuntu.com](https://cdimage.ubuntu.com/releases/24.04.3/release/) and its `SHA256SUMS`.
-2. Run:
-
-   ```bash
-   ./image/build.sh
-   ```
-
-The build takes about 25 minutes and writes `images/<OUTPUT_NAME>.img.xz` with its checksum, a package manifest and the build reports. The name and the release label are set in `image/build/build.conf`. The build checks itself as it goes: it runs the OLED unit tests, test-builds the firmware and `camera_ros`, and fails if a desktop, Wi-Fi credentials or solution code end up in the image.
-
-## Status
-
-Release 2026-10-22 is the seventh build (rc7) plus the latest firmware repository. Tested on a robot during development (earlier builds): booting, SSH over the hotspot, MWireless with `mwireless-setup`, the firmware build and minicom, building `mbot_ws` with the course commands, the LiDAR (10 Hz), the camera and its feed in Foxglove, the OLED, and flashing with the buttons using the new upload script.
-
-Not yet tested on a robot with this release: flashing without buttons (needs the firmware change above), the fan check, `mbot health --live`, `mbot report`, and a full run through the website steps by a student. Please report what you find.
