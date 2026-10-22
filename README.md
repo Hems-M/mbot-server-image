@@ -55,13 +55,17 @@ The white/green wire between the Pi and the control board shorts the Pi's GPIO p
 - If the firmware on the Pico supports it, the Pi asks the Pico over USB to enter flashing mode, and no buttons are needed.
 - Otherwise the command asks for the buttons (hold RST and BOOTSEL, release RST, then BOOTSEL) and continues by itself.
 
-The USB part needs a small change in the course firmware: `system/firmware/mbot_firmware_ros-usb-bootsel.patch`. It applies to the current `mbot_firmware_ros`. Course staff add it once to the firmware repository that students fork:
+The USB part needs a small change in the firmware, which is in the firmware submodule: [Hems-M/mbot_firmware_ros](https://github.com/Hems-M/mbot_firmware_ros), a fork of mbot-project/mbot_firmware_ros with one extra commit. That commit changes two files:
+
+- `comms/src/dual_cdc.c`: when the Pi opens the debug console at 1200 baud, the Pico restarts in flashing mode.
+- `tests/mbot_calibrate_classic.c`: the calibration program keeps answering USB after it finishes, so the next flash needs no buttons either.
+
+Firmware built from this fork needs the buttons only for the very first flash on a robot. To use it in the course, the staff bring the same commit into the firmware repository students fork, for example:
 
 ```bash
-git apply mbot_firmware_ros-usb-bootsel.patch
+git remote add hems https://github.com/Hems-M/mbot_firmware_ros.git
+git fetch hems && git cherry-pick hems/main
 ```
-
-With it, students press the buttons only for the very first flash on a new robot.
 
 ## Course website
 
@@ -87,7 +91,7 @@ Then open http://localhost:4000/docs/botlab/mbot-system-setup-Pi5.html. More in 
 
 | Path | Repository | Version |
 |------|------------|---------|
-| `upstream/mbot_firmware_ros` | mbot-project/mbot_firmware_ros | `2aeb657` (latest, 2026-10-22) |
+| `upstream/mbot_firmware_ros` | Hems-M/mbot_firmware_ros (fork) | `main`: mbot-project's latest (`2aeb657`) plus the USB flashing commit |
 | `upstream/mbot_sys_utils` | mbot-project/mbot_sys_utils | v1.3.2 |
 | `upstream/mbot_ros2_ws` | mbot-project/mbot_ros2_ws | v1.0.4 |
 | `upstream/mbot_ros_labs` | mbot-project/mbot_ros_labs | `rob550/W26-student` |
@@ -102,7 +106,32 @@ Clone with the submodules:
 git clone --recurse-submodules https://github.com/Hems-M/mbot-server-image.git
 ```
 
-The submodules are not changed in this repository. The image build copies files from them; changes to their files on the robot are made by the build (see `docs/build-notes.md`).
+Apart from the firmware fork, the submodules are the MBot project's repositories, unchanged. The image build copies files from them; changes to their files on the robot are made by the build (see `docs/build-notes.md`).
+
+## Change the firmware
+
+The firmware submodule is your own fork, so changes go there and this repository records which commit to use:
+
+```bash
+cd upstream/mbot_firmware_ros
+git switch main                      # submodules start detached
+# edit, build and test, then:
+git commit -am "Describe the change"
+git push                             # to Hems-M/mbot_firmware_ros
+cd ../..
+git add upstream/mbot_firmware_ros   # this repository now uses the new commit
+git commit -m "firmware: describe the change"
+git push
+```
+
+To bring in new commits from the MBot project's repository (remote `mbot-project`; after a fresh clone add it once with `git remote add mbot-project https://github.com/mbot-project/mbot_firmware_ros.git`):
+
+```bash
+cd upstream/mbot_firmware_ros
+git fetch mbot-project && git merge mbot-project/main && git push
+```
+
+Then commit the new submodule commit in this repository as above.
 
 ## Build the image yourself
 

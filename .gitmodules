@@ -3,7 +3,8 @@
 	url = https://github.com/mbot-project/mbot_sys_utils.git
 [submodule "upstream/mbot_firmware_ros"]
 	path = upstream/mbot_firmware_ros
-	url = https://github.com/mbot-project/mbot_firmware_ros.git
+	url = https://github.com/Hems-M/mbot_firmware_ros.git
+	branch = main
 [submodule "upstream/mbot_ros2_ws"]
 	path = upstream/mbot_ros2_ws
 	url = https://github.com/mbot-project/mbot_ros2_ws.git
