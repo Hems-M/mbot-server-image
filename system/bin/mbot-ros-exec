@@ -1,0 +1,27 @@
+#!/bin/bash
+# Run a command with the MBot system ROS environment and nothing from the student home.
+# Used by MBot system services (D-05). Installed to /opt/mbot/bin/mbot-ros-exec.
+#
+# Usage: mbot-ros-exec <command> [args...]
+
+if [[ $# -eq 0 ]]; then
+    echo "Usage: $0 <command> [args...]" >&2
+    exit 2
+fi
+
+set -a
+# shellcheck source=/dev/null  # /etc/mbot/ros.env, from system/env/ros.env
+. /etc/mbot/ros.env
+set +a
+
+# ROS setup scripts reference unset variables, so do not use "set -u" here.
+# shellcheck disable=SC1090
+. "/opt/ros/${ROS_DISTRO}/setup.bash"
+for ws in /opt/mbot/ros /opt/mbot/microros; do
+    if [[ -r "$ws/local_setup.bash" ]]; then
+        # shellcheck disable=SC1091
+        . "$ws/local_setup.bash"
+    fi
+done
+
+exec "$@"

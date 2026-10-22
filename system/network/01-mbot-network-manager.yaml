@@ -1,0 +1,10 @@
+# MBot server image: NetworkManager manages all interfaces (D-09).
+# All MBot network tools (mbot-start-network, mwireless-setup) use nmcli.
+# Installed to /etc/netplan/01-mbot-network-manager.yaml.
+network:
+  version: 2
+  renderer: NetworkManager
+  ethernets:
+    eth0:
+      dhcp4: true
+      optional: true

@@ -1,0 +1,164 @@
+#!/bin/bash
+# Upload firmware to the MBot's Pico (RP2040 or RP2350). Installed to
+# /usr/local/bin/mbot-upload-firmware by the MBot server image. Replaces the
+# upstream mbot_sys_utils script with the same commands and output lines.
+#
+# This version never drives the Raspberry Pi GPIO pins. The upstream script
+# drove GPIO 4 (BOOTSEL) and GPIO 17 (RUN) through the white/green cable, which
+# shorted the Pi's GPIO when the BOOTSEL or RST button was pressed (the Pi 5
+# overheating problem). Keep the white/green cable unplugged.
+#
+# How the Pico gets into BOOTSEL mode, in this order:
+#   1. It is already in BOOTSEL mode (RST + BOOTSEL buttons).
+#   2. Over USB: the debug port (/dev/mbot_debug) is set to 1200 baud. Firmware
+#      with the USB BOOTSEL change reboots into BOOTSEL mode when it sees this.
+#      Older firmware ignores it, and step 3 applies.
+#   3. The button steps are printed. In a terminal the script waits 30 s for
+#      the buttons; otherwise it exits without flashing.
+#
+# Usage: mbot-upload-firmware [load | run | flash] <uf2_file>
+
+E_BADARGS=65
+
+if [ $# -lt 1 ] || [ $# -gt 2 ]; then
+    echo "Usage: $0 [load | run | flash] <uf2_file>"
+    exit $E_BADARGS
+fi
+
+OPERATION=$1
+UF2_FILE=$2
+
+RP_VID="2e8a"
+BOOTSEL_PIDS="0003 000f"   # 0003: RP2040 in BOOTSEL mode, 000f: RP2350 in BOOTSEL mode
+MAGIC_BAUD=1200
+USB_WAIT_S=6               # after the 1200 baud request
+BUTTON_WAIT_S=30           # for the buttons, only in a terminal
+USB_DEVICES="${MBOT_USB_DEVICES:-/sys/bus/usb/devices}"   # overridable for tests
+TTY_CLASS="${MBOT_TTY_CLASS:-/sys/class/tty}"
+DEBUG_LINK="${MBOT_DEBUG_LINK:-/dev/mbot_debug}"
+
+if grep -q "Raspberry Pi 5" /proc/device-tree/model 2>/dev/null; then
+    echo "Detected Raspberry Pi 5, entering $1 mode..."
+fi
+
+# True if a Pico in BOOTSEL mode is on USB.
+bootsel_present() {
+    local d vid pid p
+    for d in "$USB_DEVICES"/*; do
+        [ -r "$d/idVendor" ] || continue
+        vid=$(cat "$d/idVendor")
+        pid=$(cat "$d/idProduct")
+        [ "$vid" = "$RP_VID" ] || continue
+        for p in $BOOTSEL_PIDS; do
+            [ "$pid" = "$p" ] && return 0
+        done
+    done
+    return 1
+}
+
+# Prints the Pico's debug serial port (the udev symlink, or found by name).
+find_debug_port() {
+    if [ -e "$DEBUG_LINK" ]; then
+        readlink -f "$DEBUG_LINK"
+        return 0
+    fi
+    local t
+    for t in "$TTY_CLASS"/ttyACM*; do
+        [ -e "$t" ] || continue
+        if grep -qx "MBot Debug Console" "$t/device/interface" 2>/dev/null; then
+            echo "/dev/$(basename "$t")"
+            return 0
+        fi
+    done
+    return 1
+}
+
+wait_for_bootsel() {
+    local i
+    for ((i = 0; i < $1 * 10; i++)); do
+        bootsel_present && return 0
+        sleep 0.1
+    done
+    return 1
+}
+
+# Gets the Pico into BOOTSEL mode, or explains how to do it by hand.
+enter_bootsel() {
+    bootsel_present && return 0
+    local port
+    if port=$(find_debug_port); then
+        echo "Asking the Pico to enter BOOTSEL mode over USB ($port)..."
+        # Setting 1200 baud is the request. The port disappears when the Pico
+        # reboots, so an error from stty here is expected and ignored.
+        stty -F "$port" "$MAGIC_BAUD" 2>/dev/null || true
+        wait_for_bootsel "$USB_WAIT_S" && return 0
+        echo "The Pico did not answer the USB request. Either its firmware has no USB BOOTSEL"
+        echo "support yet, or the program on it has finished (the calibration program stops"
+        echo "when it is done, unless it has the USB BOOTSEL change too)."
+    fi
+    cat <<'EOF'
+No accessible RP-series devices in BOOTSEL mode were found.
+
+Put the Pico in BOOTSEL mode with the buttons on the control board:
+  1. Hold down both RST and BOOTSEL.
+  2. Release RST first, then release BOOTSEL.
+Keep the white/green cable between the Pi and the control board unplugged.
+If it still fails, check the USB-C cable between the Pico and the Raspberry Pi.
+EOF
+    if [ -t 0 ]; then
+        echo "Waiting ${BUTTON_WAIT_S} s for the Pico in BOOTSEL mode..."
+        wait_for_bootsel "$BUTTON_WAIT_S" && { echo "Pico found in BOOTSEL mode."; return 0; }
+        echo "No Pico in BOOTSEL mode. Run this command again after pressing the buttons."
+    fi
+    return 1
+}
+
+case "$OPERATION" in
+    "load")
+        echo "Loading action for $UF2_FILE..."
+        if [ -z "$UF2_FILE" ]; then
+            echo "Missing UF2 file for 'load' operation."
+            exit $E_BADARGS
+        fi
+        if [ ! -f "$UF2_FILE" ]; then
+            echo "File not found: $UF2_FILE"
+            exit 66
+        fi
+        enter_bootsel || exit 1
+        sleep 0.5
+        sudo picotool load "$UF2_FILE" || exit 1
+        ;;
+    "run")
+        echo "Running action for loaded UF2_FILE..."
+        if ! bootsel_present; then
+            echo "The Pico is not in BOOTSEL mode, so it is already running its firmware."
+            exit 0
+        fi
+        sudo picotool reboot || exit 1
+        ;;
+    "flash")
+        echo "Flashing action for $UF2_FILE..."
+        if [ -z "$UF2_FILE" ]; then
+            echo "Missing UF2 file for 'flash' operation."
+            exit $E_BADARGS
+        fi
+        if [ ! -f "$UF2_FILE" ]; then
+            echo "File not found: $UF2_FILE"
+            exit 66
+        fi
+        enter_bootsel || exit 1
+        sleep 0.5
+        sudo picotool load "$UF2_FILE" || exit 1
+        sleep 0.5
+        sudo picotool reboot
+        ;;
+    "disable")
+        echo "'disable' held the Pico in reset through the white/green cable, which is no longer used."
+        echo "To stop the firmware, flash a different program or switch off the robot."
+        exit 1
+        ;;
+    *)
+        echo "'$OPERATION' is not a valid operation. Please provide one of the following operations: load, run, flash"
+        exit $E_BADARGS
+        ;;
+esac

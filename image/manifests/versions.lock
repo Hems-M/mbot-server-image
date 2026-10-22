@@ -1,0 +1,44 @@
+# Pinned inputs of the MBot server image build.
+# Sourced by image/build/*.sh as shell variables. One value per line, no spaces around "=".
+# Every source build checks out the exact commit listed here and fails if it differs.
+# Status: PROVISIONAL (rc2). See docs/build-notes.md for why each pin was chosen.
+
+# Base image (D-01). Verified against ../images/SHA256SUMS on 2026-10-14.
+BASE_IMAGE_FILE=ubuntu-24.04.3-preinstalled-server-arm64+raspi.img.xz
+BASE_IMAGE_SHA256=9bb1799cee8965e6df0234c1c879dd35be1d87afe39b84951f278b6bd0433e56
+BASE_IMAGE_URL=https://cdimage.ubuntu.com/releases/24.04.3/release/ubuntu-24.04.3-preinstalled-server-arm64+raspi.img.xz
+BASE_IMAGE_KERNEL=6.8.0-1031-raspi
+
+# Size of the working image while building, in GiB. The output is shrunk afterwards.
+BUILD_IMAGE_SIZE_GIB=16
+
+# ROS 2 apt source (D-02). Replaces "latest" in upstream install_ros2_jazzy.sh.
+ROS_DISTRO=jazzy
+ROS_APT_SOURCE_VERSION=1.3.0
+ROS_APT_SOURCE_URL=https://github.com/ros-infrastructure/ros-apt-source/releases/download/1.3.0/ros2-apt-source_1.3.0.noble_all.deb
+ROS_APT_SOURCE_SHA256=f31d84adf5054c7d60ded0e82c0f776a77ea33af53d08f40b9ad7c94cca55296
+
+# micro-ROS agent (ROS-004). micro_ros_msgs matches mbot_firmware_ros/built_packages.
+MICRO_ROS_AGENT_REPO=https://github.com/micro-ROS/micro-ROS-Agent.git
+MICRO_ROS_AGENT_COMMIT=7c932329ad5591ef23942ef1962534258c16b000
+MICRO_ROS_MSGS_REPO=https://github.com/micro-ROS/micro_ros_msgs.git
+MICRO_ROS_MSGS_COMMIT=4594d9db17db735b1e655141fb4afb4cdcfc5789
+
+# Camera stack (HW-005). rc2: the versions the current course image was built with.
+# Its /usr/local has libcamera 0.5.1 and rpicam-apps files dated 2025-08-15, so these are the
+# last tags before that date. The student camera_ros (mbot_ros2_ws 80fc3cb) does not compile
+# against libcamera 0.6 or newer (control_type<std::string> was removed), see P-21.
+LIBCAMERA_REPO=https://github.com/raspberrypi/libcamera.git
+LIBCAMERA_TAG=v0.5.1+rpt20250722
+LIBCAMERA_COMMIT=e53bdf1f545c2eb7d4ab0e8597cb68c960a4ec20
+RPICAM_APPS_REPO=https://github.com/raspberrypi/rpicam-apps.git
+RPICAM_APPS_TAG=v1.8.1
+RPICAM_APPS_COMMIT=eb293b0552484c35dbddf7788badf42c709a4783
+
+# Firmware toolchain (OS-006). pico-sdk tag matches picotool 2.2.0.
+PICO_SDK_REPO=https://github.com/raspberrypi/pico-sdk.git
+PICO_SDK_TAG=2.2.0
+PICO_SDK_COMMIT=a1438dff1d38bd9c65dbd693f0e5db4b9ae91779
+PICOTOOL_REPO=https://github.com/raspberrypi/picotool.git
+PICOTOOL_TAG=2.2.0
+PICOTOOL_COMMIT=a7eb3988f0645239185fadb4e25d8279478c2dbb

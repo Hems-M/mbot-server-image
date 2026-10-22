@@ -1,0 +1,26 @@
+[submodule "upstream/mbot_sys_utils"]
+	path = upstream/mbot_sys_utils
+	url = https://github.com/mbot-project/mbot_sys_utils.git
+[submodule "upstream/mbot_firmware_ros"]
+	path = upstream/mbot_firmware_ros
+	url = https://github.com/mbot-project/mbot_firmware_ros.git
+[submodule "upstream/mbot_ros2_ws"]
+	path = upstream/mbot_ros2_ws
+	url = https://github.com/mbot-project/mbot_ros2_ws.git
+[submodule "upstream/mbot_ros_labs"]
+	path = upstream/mbot_ros_labs
+	url = https://github.com/mbot-project/mbot_ros_labs.git
+	branch = rob550/W26-student
+[submodule "upstream/mbot_servo_lib"]
+	path = upstream/mbot_servo_lib
+	url = https://github.com/mbot-project/mbot_servo_lib.git
+[submodule "upstream/mbot_vision"]
+	path = upstream/mbot_vision
+	url = https://github.com/mbot-project/mbot_vision.git
+[submodule "upstream/mbot_ros_labs_solution"]
+	path = upstream/mbot_ros_labs_solution
+	url = https://github.com/mbot-project/mbot_ros_labs.git
+	branch = rob550/W26-main
+[submodule "website/rob550-docs"]
+	path = website/rob550-docs
+	url = https://github.com/rob550-docs/rob550-docs.github.io.git

@@ -1,0 +1,68 @@
+#!/bin/bash
+# Start the Foxglove bridge on demand and print the address to open in Foxglove (D-10).
+# Same bridge as "ros2 launch foxglove_bridge foxglove_bridge_launch.xml" in the course
+# docs, plus: only one bridge at a time, the addresses to open, and a hint when the
+# LiDAR driver (mbot_bringup) is not running.
+# The bridge has no login: anyone who can reach port 8765 can publish topics, including
+# /cmd_vel. Stop it with Ctrl+C when you are done.
+# Installed to /usr/local/bin/mbot-viz.
+#
+# Usage: mbot-viz [port]
+
+port="${1:-8765}"
+
+if [[ ! "$port" =~ ^[0-9]+$ ]]; then
+    echo "Usage: $0 [port]" >&2
+    exit 2
+fi
+
+addresses() {
+    local ip
+    for ip in $(hostname -I); do
+        case "$ip" in
+            *:*) ;;
+            *) echo "    ws://$ip:$port" ;;
+        esac
+    done
+}
+
+already_running() {
+    echo "The Foxglove bridge is already running on port $port (in another terminal)."
+    echo "You do not need a second one. In Foxglove, open:"
+    addresses
+    exit 0
+}
+
+# One bridge per port. Two started at the same time both pass the port check below,
+# and the second one dies with "Address already in use"; the lock prevents that.
+lock="${XDG_RUNTIME_DIR:-/tmp}/mbot-viz-$port.lock"
+{ exec 9>>"$lock"; } 2>/dev/null || exec 9>>"/tmp/mbot-viz-$USER-$port.lock"
+flock -n 9 || already_running
+if ss -ltn "sport = :$port" | grep -q LISTEN; then
+    already_running
+fi
+
+set -a
+# shellcheck source=/dev/null  # /etc/mbot/ros.env, from system/env/ros.env
+. /etc/mbot/ros.env
+set +a
+# shellcheck disable=SC1090
+. "/opt/ros/${ROS_DISTRO}/setup.bash"
+# The system underlay provides mbot_interfaces so the bridge can describe MBot messages.
+# shellcheck disable=SC1091
+[[ -r /opt/mbot/ros/local_setup.bash ]] && . /opt/mbot/ros/local_setup.bash
+# The student workspace, if built, provides newer or extra message definitions.
+# shellcheck disable=SC1091
+[[ -r "$HOME/mbot_ws/install/local_setup.bash" ]] && . "$HOME/mbot_ws/install/local_setup.bash"
+
+echo "Starting the Foxglove bridge on port $port. In Foxglove: Open connection >"
+echo "Foxglove WebSocket, then open:"
+addresses
+if ! pgrep -f "sllidar_node|mbot_bringup.launch.py" >/dev/null; then
+    echo "The LiDAR is not running, so Foxglove shows no /scan and no robot model."
+    echo "Start it in another terminal: ros2 launch mbot_bringup mbot_bringup.launch.py"
+fi
+echo "Anyone on this network can reach the bridge while it runs. Press Ctrl+C to stop."
+
+# The lock stays held by the bridge process (fd 9) until it stops.
+exec ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:="$port"

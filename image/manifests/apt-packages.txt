@@ -1,0 +1,117 @@
+# Ubuntu packages installed by the server image build (not ROS packages).
+# Format: <package> <step> # <reason> [evidence]
+# <step> is the build step that installs it (00, 10, 30, 40, 50).
+# Status: PROVISIONAL (rc2). [OLD] = installed on the current course image
+# (2026-01-15-mbot-ros2-base-ubuntu24.img), kept for parity (rc2 comparison, docs/build-notes.md).
+
+# 00-base: system basics
+locales                       00  # en_US.UTF-8 locale (OS-002)
+tzdata                        00  # America/Detroit time zone (OS-002)
+ca-certificates               00  # HTTPS downloads, git clones
+curl                          00  # downloads during build and for students [DOCS]
+wget                          00  # used in course docs and upstream scripts [CODE]
+git                           00  # students clone their forks [DOCS]
+gh                            00  # course docs use "gh repo clone" [DOCS]
+tmux                          00  # long-running sessions over SSH (no desktop)
+nano                          00  # text editor over SSH
+vim                           00  # text editor over SSH
+htop                          00  # process monitor over SSH
+i2c-tools                     00  # OLED and I2C debugging (i2cdetect)
+v4l-utils                     00  # camera debugging [CODE: upstream install_mbot_dependencies.sh]
+usbutils                      00  # lsusb for Pico and LiDAR checks
+magic-wormhole                00  # file transfer guide [DOCS: misc how-to]
+unzip                         00  # archives in course material
+python3-pip                   00  # students install Python packages (servo library) [DOCS]
+python3-venv                  00  # optional virtual environments for student Python work
+python3-numpy                 00  # imported by mbot_ros2_ws and labs [CODE]
+python3-yaml                  00  # imported by mbot_ros2_ws [CODE]
+python3-psutil                00  # imported by mbot_tools [CODE]
+python3-serial                00  # imported by mbot_servo_lib and firmware tests [CODE]
+python3-matplotlib            00  # Checkpoint 1 plots; installed today [CODE: upstream install_mbot_dependencies.sh]
+python3-qrcode                00  # installed today; QR page for the planned OLED service [CODE]
+unattended-upgrades           00  # security updates only (D-16)
+
+# 00-base: parity with the current course image [OLD] (upstream install_mbot_dependencies.sh
+# and tools students use over SSH). Header-only GL/GLUT packages start nothing.
+apt-transport-https           00  # [OLD] upstream install_mbot_dependencies.sh
+gpg                           00  # [OLD] upstream install_mbot_dependencies.sh; apt keys
+autoconf                      00  # [OLD] upstream install_mbot_dependencies.sh
+automake                      00  # [OLD] upstream install_mbot_dependencies.sh
+autotools-dev                 00  # [OLD] upstream install_mbot_dependencies.sh
+libtool                       00  # [OLD] builds of student C libraries
+bison                         00  # [OLD] parser generator, some source builds
+flex                          00  # [OLD] lexer generator, some source builds
+libusb-dev                    00  # [OLD] upstream install_mbot_dependencies.sh
+libgsl-dev                    00  # [OLD] upstream install_mbot_dependencies.sh
+libatlas-base-dev             00  # [OLD] upstream install_mbot_dependencies.sh
+freeglut3-dev                 00  # [OLD] upstream install_mbot_dependencies.sh (headers only here)
+mesa-common-dev               00  # [OLD] upstream install_mbot_dependencies.sh (headers only here)
+libgl1-mesa-dev               00  # [OLD] upstream install_mbot_dependencies.sh (headers only here)
+libglu1-mesa-dev              00  # [OLD] upstream install_mbot_dependencies.sh (headers only here)
+python3-dev                   00  # [OLD] upstream install_mbot_dependencies.sh; pip builds
+python3-scipy                 00  # [OLD] upstream install_mbot_dependencies.sh
+python3-opencv                00  # [OLD] upstream install_mbot_dependencies.sh
+gdb                           00  # [OLD] debugging student C++ nodes over SSH
+zip                           00  # [OLD] packing results for submission
+jq                            00  # [OLD] JSON on the command line
+rsync                         00  # [OLD] copying bags and maps
+clang-format                  00  # rosdep key of camera_ros tests; saves a student download (G-13)
+
+# 10-network: NetworkManager stack (D-09, review section 4.2)
+network-manager               10  # all MBot network scripts use nmcli [CODE]
+wpasupplicant                 10  # Wi-Fi client and hotspot
+dnsmasq-base                  10  # DHCP for the hotspot (NetworkManager shared mode)
+wireless-regdb                10  # regulatory database for the US domain (5 GHz hotspot)
+iw                            10  # Wi-Fi diagnostics
+wireless-tools                10  # iwgetid used by the OLED service (finding W11) [CODE]
+rfkill                        10  # unblock Wi-Fi if needed
+openssh-server                10  # SSH and VS Code Remote SSH (NET-006)
+avahi-daemon                  10  # [OLD] <hostname>.local on home networks (G-07)
+libnss-mdns                   10  # [OLD] resolve other .local names
+
+# 30-mbot-system: MBot system layer
+gpiod                         30  # gpioget: mbot-start-network sets the Pico pins to inputs (P-38) [CODE]
+fonts-dejavu-core             30  # font used by the OLED service [CODE]
+python3-luma.oled             30  # OLED driver [CODE: mbot_ros_oled_display.py]
+python3-gpiozero              30  # servo direction pin (Design Lab) [CODE: mbot_servo_lib]
+python3-lgpio                 30  # gpiozero pin backend that works on the Pi 5 [INFER]
+minicom                       30  # firmware debug console /dev/mbot_debug [DOCS]
+
+# 40-camera: build dependencies of libcamera and rpicam-apps (HW-005)
+build-essential               40  # compilers
+meson                         40  # libcamera and rpicam-apps build system
+ninja-build                   40  # libcamera and rpicam-apps build
+cmake                         40  # rpicam-apps and firmware build
+pkg-config                    40  # library discovery
+python3-jinja2                40  # libcamera code generation
+python3-ply                   40  # libcamera code generation
+nlohmann-json3-dev            40  # libpisp (Pi 5 ISP library, built as a libcamera subproject)
+pybind11-dev                 40  # libcamera Python bindings (pycamera)
+libboost-dev                  40  # libcamera
+libgnutls28-dev               40  # libcamera IPA signing
+openssl                       40  # libcamera IPA signing
+libssl-dev                    40  # libcamera IPA signing
+libtiff-dev                   40  # libcamera DNG support
+libyaml-dev                   40  # libcamera configuration files
+libudev-dev                   40  # libcamera device hotplug
+libglib2.0-dev                40  # libcamera gstreamer element
+libgstreamer-plugins-base1.0-dev 40  # libcamera gstreamer element [CODE: upstream install_camera.sh]
+libevent-dev                  40  # libcamera
+libdw-dev                     40  # libcamera backtraces
+libunwind-dev                 40  # libcamera backtraces
+libboost-program-options-dev  40  # rpicam-apps
+libexif-dev                   40  # rpicam-apps
+libjpeg-dev                   40  # rpicam-apps
+libpng-dev                    40  # rpicam-apps
+libavcodec-dev                40  # [OLD] rpicam-apps libav encoder (H.264 with rpicam-vid on the Pi 5)
+libavdevice-dev               40  # [OLD] rpicam-apps libav encoder
+libavformat-dev               40  # [OLD] rpicam-apps libav encoder
+libswresample-dev             40  # [OLD] rpicam-apps libav encoder
+libavutil-dev                 40  # [OLD] rpicam-apps libav encoder
+python3-colcon-meson          40  # students build camera_ros with colcon [CODE: upstream install_camera.sh]
+
+# 50-firmware-tools: Pico firmware build and flashing (OS-006)
+gcc-arm-none-eabi             50  # firmware compiler [CODE]
+libnewlib-arm-none-eabi       50  # firmware C library [CODE]
+libstdc++-arm-none-eabi-newlib 50  # firmware C++ library [CODE]
+libusb-1.0-0-dev              50  # picotool build

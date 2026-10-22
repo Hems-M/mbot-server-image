@@ -1,0 +1,710 @@
+# Changes to rob550-docs for the MBot server image, against 6255db3.
+# Apply in a clone of the course-docs repository: git apply course-docs.patch
+# Not in this patch: assets/images/botlab/system-setup-oled-server.png (copy it from
+# website/overlay/).
+--- a/docs/botlab/checkpoints/checkpoint2.md
++++ b/docs/botlab/checkpoints/checkpoint2.md
+@@ -4,7 +4,7 @@
+ nav_order: 3
+ parent: Checkpoints
+ grand_parent: Botlab
+-last_modified_at: 2026-03-30 10:09:00 -0500
++last_modified_at: 2026-10-16 12:00:00 -0400
+ ---
+ 
+ ### Contents
+@@ -68,15 +68,8 @@
+     source install/setup.bash 
+     ros2 launch mbot_slam mapping.launch.py
+     ```
+-3. Visualization, either thru NoMachine 
++3. Visualization with Foxglove, run in a **VSCode Terminal**:
+     ```bash
+-    # on NoMachine terminal
+-    cd ~/mbot_ros_labs/src/mbot_slam/rviz
+-    ros2 run rviz2 rviz2 -d mapping.rviz
+-    ```
+-    **OR** Foxglove
+-    ```bash
+-    # Launch foxglove bridge using vscode terminal
+     ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+     ```
+ 4. Play the rosbag in the **VSCode Terminal** 
+@@ -105,15 +98,8 @@
+     ```bash
+     ros2 run teleop_twist_keyboard teleop_twist_keyboard
+     ```
+-5. Visualization, either thru NoMachine
++5. Visualization with Foxglove, run in a **VSCode Terminal**:
+     ```bash
+-    # on NoMachine terminal
+-    cd ~/mbot_ros_labs/src/mbot_slam/rviz
+-    ros2 run rviz2 rviz2 -d mapping.rviz
+-    ```
+-     or Foxglove
+-    ```bash
+-    # Launch foxglove bridge using vscode terminal
+     ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+     ```
+ 6. After mapping the whole area, **do not stop the mapping node yet**. Save the map if you want to, in **VSCode Terminal**:
+@@ -135,7 +121,7 @@
+     ros2 launch mbot_slam view_map.launch.py map_name:=your_map_name
+     ```
+     - This will publish the map to the `/map` topic.
+-    - You can now view it in RViz (via NoMachine) or Foxglove Studio.
++    - You can now view it in Foxglove Studio.
+ 
+ {: .required_for_report } 
+ Include a screenshot of your map. Analyze the map quality and explain why it is not ideal.
+@@ -167,15 +153,8 @@
+ The localization node publishes both the estimated path and the reference path, your estimated path shouldn't be too off from the reference. If your output looks similar to the demo video, it’s good enough.
+ 
+ 1. This ROS bag includes the `/cmd_vel` topic, **unplug the Type-C cable from the Pi to the Pico** to prevent the robot from driving away.
+-2. Visualization, either thru NoMachine 
+-    ```bash
+-    # On NoMachine
+-    cd ~/mbot_ros_labs/src/mbot_slam/rviz
+-    ros2 run rviz2 rviz2 -d localization.rviz
+-    ```
+-    or Foxglove
++2. Visualization with Foxglove, run in a **VSCode Terminal**:
+     ```bash
+-    # Launch foxglove bridge using vscode terminal
+     ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+     ```
+ 3. Run the localization node in the **VSCode Terminal**:
+@@ -225,14 +204,8 @@
+     - Do you see cells "flickering" between free and occupied? This can happen if a few bad scans can erase a well-defined wall. Tune the log-odds limits: Consider tunning `kMaxLogOdds` and `kMinLogOdds`. to make it harder for a cell's state to be "flipped" after it's been confidently marked as occupied or free.
+ 
+ ### ROS bag test
+-1. Visualization, either thru NoMachine
++1. Visualization with Foxglove, run in a **VSCode Terminal**:
+     ```bash
+-    cd ~/mbot_ros_labs/src/mbot_slam/rviz
+-    ros2 run rviz2 rviz2 -d slam.rviz
+-    ```
+-    or Foxglove
+-    ```bash
+-    # Launch foxglove bridge using vscode terminal
+     ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+     ```
+ 2. Start the SLAM Node in **VSCode Terminal**:
+@@ -251,14 +224,8 @@
+ 
+ ### Real world test
+ 1. Check all the wires are connected, put the robot in the maze you want to map, reset the odometry, 
+-2. Visualization, either thru NoMachine 
++2. Visualization with Foxglove, run in a **VSCode Terminal**:
+     ```bash
+-    cd ~/mbot_ros_labs/src/mbot_slam/rviz
+-    ros2 run rviz2 rviz2 -d slam.rviz
+-    ```
+-    or Foxglove
+-    ```bash
+-    # Launch foxglove bridge using vscode terminal
+     ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+     ```
+ 3. Run the following in **VSCode Terminal**:
+--- a/docs/botlab/checkpoints/checkpoint3.md
++++ b/docs/botlab/checkpoints/checkpoint3.md
+@@ -4,7 +4,7 @@
+ nav_order: 4
+ parent: Checkpoints
+ grand_parent: Botlab
+-last_modified_at: 2026-03-30 12:09:00 -0500
++last_modified_at: 2026-10-16 12:00:00 -0400
+ ---
+ 
+ 
+@@ -30,7 +30,7 @@
+    - {: .text-red-200} **Important: You must source the workspace in every relevant terminal after each build. If you don’t, ROS will keep using the old code, and your changes will not take effect.**
+   
+ ### Planning-only test
+-In this test, the navigation node listens to `/initialpose` and `/goal_pose` topics. Publishing both in Rviz or Foxglove triggers the A* planner, and the planned path will be displayed if successful. No real robot movement occurs, purely to test the path calculation.
++In this test, the navigation node listens to `/initialpose` and `/goal_pose` topics. Publishing both in Foxglove triggers the A* planner, and the planned path will be displayed if successful. No real robot movement occurs, purely to test the path calculation.
+   
+ 1. Run launch file to publish map and run nagivation node in **VSCode Terminal**:
+   ```bash
+@@ -38,17 +38,13 @@
+   source install/setup.bash
+   ros2 launch mbot_nav path_planning.launch.py map_name:=maze1
+   ```
+-1. Open Rviz to set initial pose and goal pose in **NoMachine Terminal**:
++1. Run Foxglove bridge in **VSCode Terminal**, then set initial pose and goal pose in Foxglove:
+   ```bash
+-  cd ~/mbot_ros_labs/src/mbot_nav/rviz
+-  ros2 run rviz2 rviz2 -d path_planning.rviz
+-  ```
+-  or run Foxglove bridge
+-  ```bash
+   ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+   ```
++  - In the Foxglove **3D** panel, use the publish button: **Pose estimate** publishes `/initialpose` and **Pose** publishes `/goal_pose`. Foxglove publishes **Pose** to `/move_base_simple/goal` by default: in the 3D panel settings -> **Publish**, set the Pose topic to `/goal_pose`.
+ 
+-**Video Demo**: shows both rviz and foxglove usage
++**Video Demo**: shows both rviz and foxglove usage (RViz is not available on the MBot image, use the Foxglove part)
+ <iframe width="560" height="315" src="https://www.youtube.com/embed/SjNBaVulPzw?si=70njmZFXUyDTvZif" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+ 
+ ### Real world test
+@@ -79,13 +75,8 @@
+    source install/setup.bash
+    ros2 run mbot_slam localization_node --ros-args -p publish_tf:=true
+    ```
+-6. Start RViz in the **NoMachine Termina**l and **set the initial pose**. This pose should be your best estimate of the robot’s location in the maze. Use the maze view to place it as close as possible to the robot’s actual position, see the demo video below for details. The localization node uses this pose to initialize its particles. In Task 2.2, you do not need to set it manually because the ROS bag already contains this information.
++6. Start Foxglove bridge in **VSCode Terminal** and **set the initial pose** with **Pose estimate** in the Foxglove **3D** panel. This pose should be your best estimate of the robot’s location in the maze. Use the maze view to place it as close as possible to the robot’s actual position, see the demo video below for details. The localization node uses this pose to initialize its particles. In Task 2.2, you do not need to set it manually because the ROS bag already contains this information.
+    ```bash
+-   cd ~/mbot_ros_labs/src/mbot_nav/rviz
+-   ros2 run rviz2 rviz2 -d path_planning.rviz
+-   ```
+-   or use foxglove
+-   ```bash
+    ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+    ```
+ 7. Run motion controller in **VSCode Terminal**:
+@@ -94,7 +85,7 @@
+    source install/setup.bash
+    ros2 run mbot_nav controller_node --ros-args -p use_localization:=true
+    ```
+-8. Then **set the goal pose** on rviz.
++8. Then **set the goal pose** with **Pose** in the Foxglove **3D** panel.
+ 
+ **Video Demo**
+ 
+@@ -111,13 +102,8 @@
+     source install/setup.bash
+     ros2 launch mbot_nav navigation.launch.py map_name:=your_map
+     ```
+-3. Open RViz, set **2D Pose Estimate** (needed by the particle filter), then **2D Goal Pose**:
++3. Open Foxglove, set **Pose estimate** (needed by the particle filter), then **Pose** (the goal pose):
+    ```bash
+-   cd ~/mbot_ros_labs/src/mbot_nav/rviz
+-   ros2 run rviz2 rviz2 -d path_planning.rviz
+-   ```
+-   or
+-   ```bash
+    ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+    ```
+ 
+@@ -142,13 +128,8 @@
+    - {: .text-red-200} **Important: You must source the workspace in every relevant terminal after each build. If you don’t, ROS will keep using the old code, and your changes will not take effect.**
+   
+ **How to test?**
+-1. Start rviz in **NoMachine Terminal** or Run foxglove bridge
++1. Run foxglove bridge in **VSCode Terminal**
+    ```bash
+-   cd ~/mbot_ros_labs/src/mbot_nav/rviz
+-   ros2 run rviz2 rviz2 -d path_planning.rviz
+-   ```
+-   or
+-   ```bash
+    ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+    ```
+ 2. Launch the robot model, TF, LiDAR node in **VSCode Terminal**.
+@@ -194,13 +175,8 @@
+     source install/setup.bash
+     ros2 launch mbot_nav exploration.launch.py
+     ```
+-3. Open RViz to watch the map grow:
++3. Open Foxglove to watch the map grow:
+     ```bash
+-    cd ~/mbot_ros_labs/src/mbot_nav/rviz
+-    ros2 run rviz2 rviz2 -d path_planning.rviz
+-    ```
+-    ```bash
+-    # or use foxglove
+     ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+     ```
+ 
+@@ -222,4 +198,4 @@
+ - Submit a video of your robot autonomously navigating in a maze environment.
+    - Your video should include the following:
+       - Set goal pose, then the robot driving in the real-world lab maze.
+-      - Your visualization tool (RViz or Foxglove) displaying the map and planned path.
++      - Your visualization tool (Foxglove) displaying the map and planned path.
+--- a/docs/botlab/checkpoints/checkpoint4.md
++++ b/docs/botlab/checkpoints/checkpoint4.md
+@@ -4,7 +4,7 @@
+ nav_order: 5
+ parent: Checkpoints
+ grand_parent: Botlab
+-last_modified_at: 2025-11-20 15:09:48 -0500
++last_modified_at: 2026-10-16 12:00:00 -0400
+ ---
+ 
+ The MBot is equipped with a camera that can be used for vision-based tasks, such as identifying AprilTags and detecting obstacles in the environment.
+@@ -21,21 +21,38 @@
+     **The checkerboard size is defined by the number of intersections, not the number of squares.**
+ 
+     For example, size 8x6 means the board has 8 intersections along one dimension and 6 along the other, corresponding to a grid of 9×7 squares. You’ll need this information for calibration.
+-2. Run the camera node in the **VSCode Terminal**:
++2. Run the camera node in the **VSCode Terminal**, and keep it running during the calibration:
+     ```bash
+     ros2 run camera_ros camera_node --ros-args \
+     -p orientation:=180 \
+     -p width:=640 -p height:=480 \
+     -p format:=BGR888
+     ```
+-3. **On NoMachine**, run the following command, the GUI will pop up.
++    - The calibrator window only opens once it receives images from this node. If the camera node is not running, the calibrator waits without any message.
++3. The calibrator is a GUI. The MBot image has no desktop, so open its window on your laptop through SSH X11 forwarding:
++    - macOS: install [XQuartz](https://www.xquartz.org/), then **log out of your Mac and log back in** (or restart), otherwise SSH cannot find XQuartz. Windows: use [MobaXterm](https://mobaxterm.mobatek.net/), it includes an X server. Linux: nothing to install.
++    - Open a new terminal **on your laptop** (macOS: the Terminal app, not the VSCode terminal) and SSH with `-Y`:
+     ```bash
++    ssh -Y mbot@your_mbot_ip
++    ```
++    - Check that X11 forwarding works, in this terminal on the MBot:
++    ```bash
++    echo $DISPLAY
++    ```
++    It should print something like `localhost:10.0`. If it prints nothing, X11 forwarding is not working: on macOS, open XQuartz first, then SSH again with `-Y`.
++    - Optional test window (closes after 5 seconds):
++    ```bash
++    python3 -c "import cv2, numpy; cv2.imshow('X11 test', numpy.zeros((200, 300), numpy.uint8)); cv2.waitKey(5000)"
++    ```
++    - In this terminal, run the following command, the GUI will pop up on your laptop.
++    ```bash
+     ros2 run camera_calibration cameracalibrator \
+     --size 6x8 --square 0.025 --ros-args -r image:=/camera/image_raw -p camera:=/camera
+     ```
+     - `--size` specifies the number of intersections (as noted in Step 1).
+     - `--square` defines the size of each checkerboard square in meters.
+     - Adjust the values based on your checkerboard. 0.025 means each square is 25 mm.
++    - The window can take a few seconds to open over Wi-Fi. If it does not open, check that the camera node from step 2 is still running: `ros2 topic hz /camera/image_raw` in another terminal should show about 30 Hz.
+ 4. How to use the calibrator GUI? Refer to the [ROS2 Camera Calibration Tutorial](https://docs.nav2.org/tutorials/docs/camera_calibration.html#tutorial-steps)
+     - Start reading from: Tutorial Steps → Step 5: Start the camera calibration node.
+ 5. Once calibration is complete, move the results to your MBot workspace by running the following commands:
+@@ -61,14 +78,14 @@
+     ros2 launch mbot_vision camera.launch.py
+     ```
+     - This will publish topics `/camera/image_raw` and `/camera/camera_info`
+-    - You can view the camera feed in rqt on NoMachine or Foxglove after launching this node.
++    - You can view the camera feed in Foxglove after launching this node.
+ - To launch the camera with image rectification using the calibration results (camera node + rectification node), run the following in the **VSCode Terminal**:
+     ```bash
+     ros2 launch mbot_vision camera_rectify.launch.py
+     ```
+     - You need to do camera calibration first to run the rectification node. It needs the camera info.
+     - This will also publish the topic `/image_rect`
+-    - You can view the camera feed in both raw and rectified in rqt after launching these 2 nodes.
++    - You can view the camera feed in both raw and rectified in Foxglove after launching these 2 nodes.
+ - To launch full vision pipeline (camera + rectification + AprilTag detection), run the following in the **VSCode Terminal**:
+     ```bash
+     ros2 launch mbot_vision apriltag.launch.py
+@@ -76,13 +93,8 @@
+     - This will publish AprilTag detection results on `/detections`.
+     - It will also publish the TF from `/camera` to each Apriltag, so you do not need to decode `/detections` or convert tag coordinates from the 2D image plane into the 3D world frame yourself.
+ 
+-You can visualize the camera view in rqt on NoMachine desktop:
++You can visualize the camera view in the **Image** panel in Foxglove by running the bridge in a **VSCode Terminal**:
+ ```bash
+-ros2 run rqt_image_view rqt_image_view
+-```
+-
+-Or on foxglove studio by running the bridge:
+-```bash
+ ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+ ```
+ 
+--- a/docs/botlab/checkpoints/competition.md
++++ b/docs/botlab/checkpoints/competition.md
+@@ -4,7 +4,7 @@
+ nav_order: 7
+ parent: Checkpoints
+ grand_parent: Botlab
+-last_modified_at: 2025-11-19 13:09:48 -0500
++last_modified_at: 2026-10-15 12:00:00 -0400
+ ---
+ 
+ <a class="image-link" href="/assets/images/botlab/checkpoints/doge-meme.png">
+@@ -65,7 +65,7 @@
+ 
+ Starting from the designated position, explore the area and generate a map, then return to the starting pose.
+ - Alternative ways to complete this level:
+-  - Use RViz to set goal poses for exploration -> 25% deduction
++  - Use Foxglove to set goal poses for exploration -> 25% deduction
+   - Use manual teleop for exploration -> points awarded **only for map quality, no points for pose return**.
+   - Use `slam_toolbox` for mapping -> 50% deduction
+ 
+--- /dev/null
++++ b/docs/botlab/how-to-guide/foxglove-guide.md
+@@ -0,0 +1,66 @@
++---
++layout: default
++title: Foxglove Guide
++parent: How-to Guide
++grand_parent: Botlab
++nav_order: 0
++last_modified_at: 2026-10-16 12:00:00 -0400
++---
++
++Foxglove is the visualization tool for the MBot. It runs in the browser on your laptop and replaces NoMachine, RViz and rqt. The Foxglove bridge is already installed on the MBot image, you do not need to install anything on the robot.
++
++In this guide, we list the Foxglove tips you need in the checkpoints. The first steps are the same as in [Set up foxglove](/docs/botlab/mbot-system-setup-Pi5#set-up-foxglove).
++
++### Contents
++* TOC
++{:toc}
++
++## Connect to the MBot
++1. Go to: [foxglove](https://app.foxglove.dev/) -> Sign in with Google -> Sign in with you UM account
++2. Run the Foxglove bridge in the **VSCode terminal**:
++    ```bash
++    ros2 launch foxglove_bridge foxglove_bridge_launch.xml
++    ```
++3. Run the following in a second **VSCode terminal**:
++    ```bash
++    ros2 launch mbot_bringup mbot_bringup.launch.py 
++    ```
++4. Open connection -> Foxglove WebSocket -> Replace `localhost` with your IP address -> Open
++5. When you are done, stop the bridge with `ctrl+C`.
++
++{: .warning }
++While the bridge runs, anyone on the same network can see your topics and send commands to your robot, including `/cmd_vel`. Stop it when you do not need it.
++
++## LiDAR scan or robot model not showing
++1. Make sure the bringup is running, in **one** terminal only. A second bringup cannot open the LiDAR and stops with `SL_RESULT_OPERATION_TIMEOUT`.
++2. Check that the scan is published, in another **VSCode Terminal**:
++    ```bash
++    ros2 topic hz /scan
++    ```
++    - You should see about 10 Hz.
++3. In Foxglove, open the settings of the **3D** panel -> **Topics**, and turn on `/scan` and `/robot_description`.
++
++You do not need to import a layout. Use the layout Foxglove opens with, and change it in Foxglove as described on this page. If Foxglove asks, save the layout so it keeps your settings for next time.
++
++- Run the bridge in **one** terminal only, too. A second bridge stops with "Address already in use".
++
++## Set the initial pose and the goal pose
++The publish button is in the toolbar at the top right of the **3D** panel. Click and hold it to choose:
++- **Pose estimate**: publishes `/initialpose`, used to initialize localization.
++- **Pose**: publishes the goal for your path planner.
++
++Then click on the map where the robot should be, and drag in the direction it should face.
++
++- Foxglove publishes **Pose** to `/move_base_simple/goal` by default, which the MBot code does not listen to. In the 3D panel settings -> **Publish**, set the Pose topic to `/goal_pose`.
++
++## Camera
++- Add an **Image** panel and select `/camera/image_raw/compressed` while a camera node runs. Use the compressed topic over Wi-Fi, the raw image is slow.
++- To see the rectified image (Checkpoint 4), select `/image_rect` in the panel settings.
++
++## Plot
++- In a **Plot** panel, add a series per value, for example `/odom.twist.twist.linear.x` and `/cmd_vel.linear.x` for Checkpoint 1.
++
++## Tips
++- Every topic shown in a panel is sent over Wi-Fi. Close panels you do not need.
++- If Foxglove stops updating, check the robot is still on the network (the IP on the OLED) and restart the bridge.
++- `mbot-viz` on the MBot starts the same bridge, prints the address to open, and tells you when the bridge or the LiDAR is not running.
+--- a/docs/botlab/how-to-guide/slam-toolbox-guide.md
++++ b/docs/botlab/how-to-guide/slam-toolbox-guide.md
+@@ -4,7 +4,7 @@
+ parent: How-to Guide
+ grand_parent: Botlab
+ nav_order: 1
+-last_modified_at: 2026-03-27 15:37:48 -0500
++last_modified_at: 2026-10-16 12:00:00 -0400
+ ---
+ 
+ Slam Toolbox is a set of tools and capabilities for 2D SLAM. More details can be found on its [GitHub page](https://github.com/SteveMacenski/slam_toolbox).
+@@ -30,13 +30,8 @@
+     ```bash
+     ros2 run teleop_twist_keyboard teleop_twist_keyboard
+     ```
+-5. Start rviz or foxglove
++5. Start foxglove
+     ```bash
+-    # NoMachine
+-    cd ~/mbot_ws/src/mbot_navigation/rviz
+-    ros2 run rviz2 rviz2 -d mapping.rviz
+-    ```
+-    ```bash
+     # VSCode Terminal #4
+     ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+     ```
+@@ -69,11 +64,10 @@
+     source install/setup.bash
+     ros2 run mbot_nav navigation_node --ros-args -p pose_source:=tf
+     ```
+-1. Start rviz. You can use "2D Goal Pose" to set the goal pose to lead the mbot to explore.
++1. Start foxglove. You can use **Pose** in the Foxglove **3D** panel (pose topic `/goal_pose`) to set the goal pose to lead the mbot to explore.
+     ```bash
+-    # NoMachine
+-    cd ~/mbot_ros_labs/src/mbot_nav/rviz
+-    ros2 run rviz2 rviz2 -d path_planning.rviz
++    # VSCode Terminal #5
++    ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+     ```
+ 2. **VSCode Terminal #6**: Save the map
+     ```bash
+--- a/docs/botlab/mbot-system-setup-Pi5.md
++++ b/docs/botlab/mbot-system-setup-Pi5.md
+@@ -3,7 +3,7 @@
+ title: MBot System Setup
+ parent: Botlab
+ nav_order: 2
+-last_modified_at: 2026-03-06 12:20:00 -0500
++last_modified_at: 2026-10-16 12:00:00 -0400
+ ---
+ 
+ The following items are needed:
+@@ -11,7 +11,7 @@
+ 2. SD adapter
+ 3. A laptop can read and write SD card
+ 
+-**Notice #1**: You do not need an external monitor during the set up process. However, if you want to connect to external monitor at any point, you need to plug into **HDMI-0 port**. The Pi5 has 2 HDMI ports, plug into the one closer to USB C port.
++**Notice #1**: You do not need an external monitor during the set up process. However, if you want to connect to external monitor at any point, you need to plug into **HDMI-0 port**. The Pi5 has 2 HDMI ports, plug into the one closer to USB C port. The MBot image has no desktop, the monitor shows a text login screen.
+ 
+ **Notice #2**: This guide will walk you through the steps needed to setup the MBot Classic system. The guide is intended to be followed in order, do not jump back and forth.
+ 
+@@ -21,8 +21,8 @@
+ 
+ ## Set up RPi 5 System
+ ### 1. Flash the image
+-1. Download the custom image `2026-01-15-mbot-ros2-base-ubuntu24.img.gz` from this [link](https://www.dropbox.com/scl/fi/1ikeu5tf3qwdb0fjo6o3v/2026-01-15-mbot-ros2-base-ubuntu24.img.gz?rlkey=rtsieyxcbuzksxb2z63eieyla&st=42v6g0wq&dl=0) to your laptop.
+-2. Download [Balena Etcher](https://etcher.balena.io/) to your laptop, it is a tool to flash the OS image to the SD card. Plug in the SD card to your laptop using SD card reader then following the steps in Balena Etcher. (The image is 18GB, this can take 15 min).
++1. Download the custom image `2026-10-22-MBOT-UBUNTU-SERVER_IMAGE.img.xz` from this [link](#) to your laptop. (Course staff: replace `#` with the download link.)
++2. Download [Balena Etcher](https://etcher.balena.io/) to your laptop, it is a tool to flash the OS image to the SD card. Plug in the SD card to your laptop using SD card reader then following the steps in Balena Etcher. (The download is 2.5 GB and expands to 12 GB on the card, this can take 10 min).
+ 
+ Once you have the SD card with the OS image flashed on it, don't insert the SD card in the Pi 5 yet, continue to the next step.
+ 
+@@ -51,35 +51,43 @@
+     </a>
+ 
+ 2. Turn on the power bank and ensure that the power cables are connected as per the [assembly guide](https://mbot.robotics.umich.edu/docs/hardware/classic/assembly/mbot-wiring/).
+-3. **Wait for about 1 minute until the OLED screen lights up** like the image below, where the IP should be something like `192.168.X.X` meaning it is part of a local network and not directly accessible from the public internet. Once you see this, you can proceed to the next step.
++3. **Wait for about 1 minute until the OLED screen shows the IP** like the image below. While the robot boots, the OLED shows an MBot being put together and "Waiting for network" at the bottom. The IP should be something like `192.168.X.X` meaning it is part of a local network and not directly accessible from the public internet. Once you see this, you can proceed to the next step.
+ 
+-    <a class="image-link" href="/assets/images/botlab/system-setup-oled.jpg">
+-    <img src="/assets/images/botlab/system-setup-oled.jpg" alt="" style="max-width:300px;"/>
++    <a class="image-link" href="/assets/images/botlab/system-setup-oled-server.png">
++    <img src="/assets/images/botlab/system-setup-oled-server.png" alt="" style="max-width:300px;"/>
+     </a>
+ 
++    - The first boot takes longer than later boots.
++    - If no Wi-Fi is found, the bottom line shows `192.168.3.1` with `AP`: the MBot runs its own access point.
++    - If the bottom line of the OLED turns white with a warning triangle (or flashes), the OLED also shows a `WARNING` or `ERROR` card that says what is wrong and what to do (for example "Pico not connected" or "Battery low"). Run `mbot health` for the details.
+ 
++
+ ### 4.1 Connect to the Internet on UM Campus - MWireless
+-**Video Demo:**
+-<iframe width="560" height="315" src="https://www.youtube.com/embed/FF700eSdS6g?si=5K4xI6k8Y4ttyCH1" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+ 
+ **Steps:**
+ 1. Connect to the MBot's local access point. See the instructions on the official MBot website [here](https://mbot.robotics.umich.edu/docs/setup/networking/#connecting-to-the-mbots-access-point) under the "Connecting to the MBot’s Access Point" section.
+-2. Use NoMachine to access the MBot. Follow the instructions on the official MBot website [here](https://mbot.robotics.umich.edu/docs/tutorials/no-machine/).
+-3. Once you are have access to the MBot using NoMachine, verify that MBot's date and time. If the date and time are not current, update it using the following command. NOTE: if the date and time are incorrect, you will not be able to connect to WiFi.
++2. SSH to the MBot from your laptop terminal. The password is below in [Remote Access](#5-remote-access).
++    ```bash
++    ssh mbot@192.168.3.1
++    ```
++3. Once you are logged in, verify that MBot's date and time. If the date and time are not current, update it using the following command. NOTE: if the date and time are incorrect, you will not be able to connect to WiFi.
+    ```bash
++   timedatectl
++   ```
++   ```bash
+         sudo date -s "2026-08-24 8:00:00"
+    ```
+    **Replace `2026-08-24 8:00:00` with today's date and time.**
+-4. Connect the MBot to the Internet. Open a terminal in the NoMachine desktop and run the following commands to connect the MBot to the Internet:
++4. Connect the MBot to the Internet. Run the following command in the MBot terminal:
+     ```bash
+-    cd ~
+-    ./SecureW2_JoinNow.run
++    sudo mwireless-setup
+     ```
+ 5. When prompted for your unique name and password, use the 550 course credentials, it will be distributed during lab. Avoid using your own UM credentials for your privacy safety.
+-6. After entering your credentials, NoMachine will disconnect during the process. Close the NoMachine window and wait for about 1 minute. Check the OLED screen to see if the IP address has changed from `192.168.X.X` to a different one. This indicates that the MBot has successfully connected to the Internet. 
+-   - If the OLED screen says "IP Not Found" or "Error" and has been that way for over two minutes, you aren't connected to the network, you might have typo when input the UM account password, find GSIs and ask to connect to an external monitor.
+- 
++6. After entering your credentials, your SSH session will freeze or disconnect during the process, that is expected. Close the terminal and wait for about 1 minute. Check the OLED screen to see if the IP address has changed from `192.168.X.X` to a different one. This indicates that the MBot has successfully connected to the Internet.
++   - If the access point comes back instead (the OLED shows `192.168.3.1` with `AP` again), connect to it again, SSH in, and run `sudo mwireless-setup --status` to see what went wrong. You might have typo when input the UM account password.
++   - If the OLED screen says "No IP yet" or "! CHECK ROBOT ... No IP address" and has been that way for over two minutes, you aren't connected to the network, find GSIs and ask to connect to an external monitor.
+ 
++
+ ### 4.2 Connect to the Internet at Home
+ 1. Ensure the `new_wifi_ssid` and `new_wifi_password` are correctly set in the `mbot_config.txt` file (check for any typos). They should be your home wifi name, and home wifi password.
+ 
+@@ -94,13 +102,20 @@
+ 
+ To access the mbot, your laptop and the MBot must always be on the same network. And there are 2 options to connect:
+ 1. Using VSCode (Recommended), here is the tutorail: [link](https://mbot.robotics.umich.edu/docs/tutorials/vscode/#connecting-to-the-robot)
+-2. Using NoMachine, here is the tutorail: [link](https://mbot.robotics.umich.edu/docs/tutorials/no-machine/)
++2. Using your laptop terminal: `ssh mbot@your_mbot_ip`
+ 
++The MBot image has no desktop, NoMachine is not used anymore. For visualization we use Foxglove, see [Set up foxglove](#set-up-foxglove).
++
+ Username: mbot <br>
+ Password: i<3robots!
+ {: .note }
+ 
++If SSH says "REMOTE HOST IDENTIFICATION HAS CHANGED", you flashed a new image and your laptop remembers the old one. Remove the old entry on your laptop, then connect again:
++```bash
++ssh-keygen -R your_mbot_ip
++```
+ 
++
+ ### 6. Change your mbot's password
+ 
+ For mbot network security, you may change your password once you have set up your mbot. The default password is `i<3robots!`, which everyone uses. Here's how to change your mbot's password:
+@@ -119,6 +134,21 @@
+     passwd: password updated successfully
+     ```
+ 
++### 7. Check your mbot
++
++Run the following in the MBot terminal:
++```bash
++mbot health
++```
++It shows the network, the Pico, the battery voltage, temperature, the Pi fan, RAM, disk and any problem with what to do. Run it whenever something does not work. The OLED runs the same checks (except the fan).
++- `mbot health --live` shows the same every second, with a list of what changed (for example the Pico unplugged, or the LiDAR started). Quit with `ctrl+C`.
++- When you ask the GSIs for help, run `mbot report`. It puts the health check, the logs and the settings (without passwords) into one file and tells you how to copy it to your laptop. Send that file with your question.
++
++To see the commands you will use in this course, grouped by topic:
++```bash
++mbot --help
++```
++
+ ## Flash MBot firmware
+ In this session, we are going to work on setup of the Control Board, which is the board located at the bottom of the mbot.
+ 
+@@ -151,13 +181,19 @@
+ ### 2. Calibrate the MBot and flash the firmware
+ In this step, we are going to calibrate the mbot and then flash the firmware.
+ 
++{: .warning }
++**Unplug the GREEN/WHITE jumper wire** between the Raspberry Pi and the control board, and keep it unplugged. When the BOOTSEL or RST button is pressed, this wire shorts the Pi's GPIO pins, which damages the Pi and makes it overheat. The MBot image does not use it: the firmware is flashed over the USB-C cable.
++
+ 1. **Place the MBot on the floor** in a spot with at least 2 feet of clear space around the robot, preferably on the same type of surface you plan to use it on.
+ 2. First, flash the calibration file to calibrate your MBot.
+     ```bash
+     cd ~/mbot_firmware_ros/build
+     sudo mbot-upload-firmware flash mbot_calibrate_classic.uf2
+     ```
+-    `mbot_calibrate_classic.uf2` is one of the files we compiled from step 1. Expected output:
++    `mbot_calibrate_classic.uf2` is one of the files we compiled from step 1.
++    - If the command asks for it, put the Pico in BOOTSEL mode with the buttons on the control board: hold down both **RST** and **BOOTSEL**, release **RST** first, then release **BOOTSEL**. The command waits 30 seconds and continues by itself.
++
++    Expected output:
+     ```bash
+     $ sudo mbot-upload-firmware flash mbot_calibrate_classic.uf2
+     [sudo] password for mbot: 
+@@ -180,8 +216,8 @@
+ ```bash
+ No accessible RP-series devices in BOOTSEL mode were found.
+ ```
+-1. Check if all the cables are connected correctly (USB-C from Pico to Pi; Pico's power cable; the GREEN/WHITE jumper wire to the control board).
+-2. If all the cables are connected, please use the "Manual Boot Mode" in this [tutorial](https://mbot.robotics.umich.edu/docs/setup/firmware/#1-manual-boot-mode) to flash the firmware.
++1. Check if the cables are connected correctly (USB-C from Pico to Pi; Pico's power cable). The GREEN/WHITE jumper wire stays unplugged.
++2. Put the Pico in BOOTSEL mode with the buttons (hold down both **RST** and **BOOTSEL**, release **RST** first, then release **BOOTSEL**) and run the command again.
+ 
+ ### 3. Minicom to verify the flash operation
+ 
+@@ -242,7 +278,33 @@
+     source install/local_setup.bash
+     ```
+     - There might be warnings after running colcon build from sllidar_ros2 package: `1 package had stderr output: sllidar_ros2`, it is normal, if you re-run the command the warnings will be gone.
++    - If `rosdep` says "your rosdep installation has not been initialized yet", run `rosdep update` and then run the `rosdep install` command again.
+ 
++## Set up foxglove
++Foxglove is a web-based visualization tool, it replaces NoMachine on the MBot image. The Foxglove bridge is already installed on the MBot, you do not need to install it.
++
++Test:
++1. Go to: [foxglove](https://app.foxglove.dev/) -> Sign in with Google -> Sign in with you UM account
++2. Run the Foxglove bridge in the **VSCode terminal**:
++    ```bash
++    ros2 launch foxglove_bridge foxglove_bridge_launch.xml
++    ```
++3. Run the following in a second **VSCode terminal**:
++    ```bash
++    ros2 launch mbot_bringup mbot_bringup.launch.py 
++    ```
++4. Open connection -> Foxglove WebSocket -> Replace `localhost` with your IP address -> Open
++5. If you use chrome, foxglove will pop up a window, follow the instruction there.
++6. In the **3D** panel, open the panel settings -> **Topics**, and turn on `/scan` and `/robot_description`. You should see the robot model and the LiDAR scan.
++    - You do not need to import a layout. If Foxglove asks, save the layout so it keeps these settings for next time.
++
++- Run each command in **one** terminal only. A second bridge stops with "Address already in use", a second bringup stops with `SL_RESULT_OPERATION_TIMEOUT`.
++- The LiDAR scan and the robot model only show up while `mbot_bringup` is running.
++- Setting poses, camera and plots: see the [Foxglove Guide](/docs/botlab/how-to-guide/foxglove-guide).
++
++Demo video:
++<iframe width="560" height="315" src="https://www.youtube.com/embed/xWfMV1e5gKg?si=ucnY2If-2owgw8bM" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
++
+ ## Test Camera
+ 
+ Test your camera by going through the following steps in order. **If any of the steps produce unexpected results, contact the GSIs for assistance.**
+@@ -252,6 +314,7 @@
+    rpicam-hello
+    ```
+    - If the terminal didn't say "ERROR: *** no cameras available ***", your camera is detected. Everything is good, use `ctrl+C` to quit.
++   - The MBot image has no desktop, so "Preview window unavailable" is expected.
+ 2. To test if camera is working, run:
+    ```bash
+    cd ~
+@@ -267,11 +330,7 @@
+     -p format:=BGR888
+    ```
+    - **Ignore** the errors about calibration files.
+-   - You can visualize the camera view in rqt on NoMachine desktop. Run the following in the **NoMachine Terminal**:
+-    ```bash
+-    ros2 run rqt_image_view rqt_image_view
+-    ```
+-    - Select the image topic `/camera/image_raw`
++   - You can visualize the camera view in an **Image** panel in Foxglove (topic `/camera/image_raw/compressed`). Run the Foxglove bridge in a second **VSCode terminal** and connect as in [Set up foxglove](#set-up-foxglove).
+ 
+ {: .warning }
+ **Do not hot-swap the camera!** Hot swap will leave the camera on ghost state. If you need to replace the camera, the correct procedure is: Power OFF → Wait 30 seconds → Swap cameras or Re-insert ribbon cable → Power ON
+@@ -283,40 +342,13 @@
+     ros2 launch mbot_bringup mbot_bringup.launch.py 
+     ```
+     - This will bring up the lidar driver, the robot description for visualization, and the static tf.
+-2. Run the following in the **NoMachine Terminal**:
+-   ```bash
+-   ros2 launch mbot_bringup mbot_viz.launch.py
+-   ```
+-   You should see the RViz open up with the robot model and the LiDAR scan show up. And if you look closely, the lidar scan is actually "floating", because it is shooting out from the lidar frame.
+-
+-    <a class="image-link" href="/assets/images/botlab/rviz0.png">
+-    <img src="/assets/images/botlab/rviz0.png" alt="Image from RPi Foundation" style="max-width:600px;"/>
+-    </a>
+-
+-
+-## Install and test foxglove
+-Install Foxglove bridge, a web-based visualization tool as **an alternative to NoMachine**. Use foxglove will save at least 50% CPU usage.
+-
+-```bash
+-sudo apt update
+-sudo apt install ros-$ROS_DISTRO-foxglove-bridge
+-```
+-
+-Test:
+-1. Go to: [foxglove](https://app.foxglove.dev/) -> Sign in with Google -> Sign in with you UM account
+-2. Run the Foxglove bridge in the **VSCode terminal**:
++    - Run it in one terminal only. If it is already running in another terminal, the second LiDAR driver stops with `SL_RESULT_OPERATION_TIMEOUT`.
++2. Run the Foxglove bridge in a second **VSCode terminal** and connect Foxglove as in [Set up foxglove](#set-up-foxglove).
+     ```bash
+     ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+     ```
+-3. Run the following in the **VSCode terminal**:
+-    ```bash
+-    ros2 launch mbot_bringup mbot_bringup.launch.py 
+-    ```
+-4. Open connection -> Foxglove WebSocket -> Replace `localhost` with your IP address -> Open
+-5. If you use chrome, foxglove will pop up a window, follow the instruction there.
++   You should see the robot model and the LiDAR scan show up in the **3D** panel. And if you look closely, the lidar scan is actually "floating", because it is shooting out from the lidar frame.
+ 
+-Demo video:
+-<iframe width="560" height="315" src="https://www.youtube.com/embed/xWfMV1e5gKg?si=ucnY2If-2owgw8bM" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+ 
+ ## Useful commands
+ ### Turn LiDAR ON/OFF
+@@ -338,3 +370,9 @@
+ ```bash
+ ros2 service call /reset_odometry std_srvs/srv/Trigger
+ ```
++### Command list on the MBot
++To see more commands grouped by topic (network, firmware, ROS, understanding the code, build, sensors, Foxglove, data, troubleshooting), run this on the MBot:
++```bash
++mbot --help
++```
++For example, `mbot help code` lists commands that help you find your way in the code: message fields, programs in a package, launch file arguments, the TF tree.

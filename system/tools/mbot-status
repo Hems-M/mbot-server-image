@@ -1,0 +1,8 @@
+#!/bin/bash
+# MBot health check: the same checks as the OLED, in a terminal.
+# Installed to /usr/local/bin/mbot-status. Code: /opt/mbot/oled/mbot_oled/cli.py
+#
+# Usage: mbot-status [--brief] [--live] [--no-color]
+
+cd /opt/mbot/oled || exit 1
+exec /opt/mbot/bin/mbot-ros-exec env PYTHONDONTWRITEBYTECODE=1 python3 -m mbot_oled.cli "$@"

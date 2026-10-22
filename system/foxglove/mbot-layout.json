@@ -1,0 +1,135 @@
+{
+  "configById": {
+    "3D!mbot-3d": {
+      "cameraState": {
+        "perspective": false,
+        "distance": 4,
+        "phi": 0,
+        "thetaOffset": 90,
+        "targetOffset": [0, 0, 0],
+        "target": [0, 0, 0],
+        "targetOrientation": [0, 0, 0, 1],
+        "fovy": 45,
+        "near": 0.01,
+        "far": 5000
+      },
+      "followMode": "follow-position",
+      "followTf": "base_link",
+      "scene": {
+        "transforms": { "showLabel": false, "axisScale": 0.4 }
+      },
+      "transforms": {},
+      "topics": {
+        "/robot_description": { "visible": true },
+        "/scan": {
+          "visible": true,
+          "pointSize": 4,
+          "pointShape": "circle",
+          "colorMode": "flat",
+          "flatColor": "#ffcb05ff"
+        },
+        "/map": { "visible": true },
+        "/particle_cloud": { "visible": true },
+        "/planned_path": { "visible": true },
+        "/waypoints": { "visible": true },
+        "/estimated_path": { "visible": true },
+        "/reference_path": { "visible": true },
+        "/odom_path": { "visible": true },
+        "/estimated_pose": { "visible": true },
+        "/goal_pose": { "visible": true }
+      },
+      "layers": {
+        "mbot-grid": {
+          "visible": true,
+          "frameLocked": true,
+          "label": "Grid",
+          "instanceId": "mbot-grid",
+          "layerId": "foxglove.Grid",
+          "frameId": "odom",
+          "size": 10,
+          "divisions": 20,
+          "lineWidth": 1,
+          "color": "#248eff80",
+          "position": [0, 0, 0],
+          "rotation": [0, 0, 0],
+          "order": 1
+        }
+      },
+      "publish": {
+        "type": "pose",
+        "poseTopic": "/goal_pose",
+        "pointTopic": "/clicked_point",
+        "poseEstimateTopic": "/initialpose",
+        "poseEstimateXDeviation": 0.5,
+        "poseEstimateYDeviation": 0.5,
+        "poseEstimateThetaDeviation": 0.26179939
+      },
+      "imageMode": {}
+    },
+    "Image!mbot-camera": {
+      "cameraState": {
+        "distance": 20,
+        "perspective": true,
+        "phi": 60,
+        "target": [0, 0, 0],
+        "targetOffset": [0, 0, 0],
+        "targetOrientation": [0, 0, 0, 1],
+        "thetaOffset": 45,
+        "fovy": 45,
+        "near": 0.5,
+        "far": 5000
+      },
+      "followMode": "follow-pose",
+      "scene": {},
+      "transforms": {},
+      "topics": {},
+      "layers": {},
+      "publish": {
+        "type": "point",
+        "poseTopic": "/move_base_simple/goal",
+        "pointTopic": "/clicked_point",
+        "poseEstimateTopic": "/initialpose",
+        "poseEstimateXDeviation": 0.5,
+        "poseEstimateYDeviation": 0.5,
+        "poseEstimateThetaDeviation": 0.26179939
+      },
+      "imageMode": {
+        "imageTopic": "/camera/image_raw/compressed"
+      }
+    },
+    "Plot!mbot-battery": {
+      "title": "Battery voltage (V)",
+      "paths": [
+        {
+          "value": "/battery_adc.volts[3]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "battery"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": false,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": false,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240,
+      "followingViewWidth": 60
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": { "speed": 1 },
+  "layout": {
+    "first": "3D!mbot-3d",
+    "second": {
+      "first": "Image!mbot-camera",
+      "second": "Plot!mbot-battery",
+      "direction": "column",
+      "splitPercentage": 60
+    },
+    "direction": "row",
+    "splitPercentage": 66
+  }
+}

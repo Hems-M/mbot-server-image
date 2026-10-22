@@ -1,0 +1,1243 @@
+#!/usr/bin/env bash
+# =============================================================================
+#  mwireless-setup  —  connect an MBot to U-M "MWireless" from a terminal
+# =============================================================================
+#
+#  WHY THIS EXISTS
+#    Students used to open a NoMachine desktop just to run SecureW2_JoinNow.run.
+#    This script does the same job over plain SSH, so the robot needs no desktop.
+#
+#  WHAT IT CONFIGURES (copied from the official JoinNow "UMich-WiFi" profile)
+#    Network ......... MWireless (WPA2-Enterprise)
+#    Login method .... PEAP with MSCHAPv2 inside
+#    Username ........ <uniqname>@umich.edu
+#    Trusted CA ...... USERTrust RSA Certification Authority (pinned by fingerprint)
+#    Server name ..... radius.umnet.umich.edu (protects against a fake MWireless)
+#
+#  ONE RUN, START TO FINISH  (sudo mwireless-setup)
+#    1. Check we are root, NetworkManager is running, and find the Wi-Fi card.
+#    2. Make sure the CA certificate bundle exists.
+#    3. Ask for uniqname + password.
+#    4. Save an "MWireless" profile in NetworkManager.
+#    5. Start a BACKGROUND job that switches the radio to MWireless.
+#       (Background, because the SSH session dies the moment the radio leaves
+#        the robot's hotspot — the job must keep going without us.)
+#    6. Success -> sync the clock, refresh certificates, record "OK".
+#       Failure -> work out why, bring the hotspot back, record "FAILED" + a hint.
+#
+#  HOW THIS FILE IS ORGANISED (read top to bottom)
+#    Part 1   Settings .................. every value you might want to change
+#    Part 2   Printing and logging ...... messages to the screen and the log file
+#    Part 3   Small helpers ............. root check, lock, status file
+#    Part 4   Asking NetworkManager ..... Wi-Fi card, current connection, IP
+#    Part 5   Certificates .............. build and refresh the CA bundle
+#    Part 6   Clock ..................... the "robot has the wrong date" problem
+#    Part 7   Username and password ..... ask, check, tidy up
+#    Part 8   Create the profile ........ the nmcli command (the heart of it)
+#    Part 9   Connect ................... switch, check, roll back if it fails
+#    Part 10  Commands .................. setup, --status, --forget, ...
+#    Part 11  Main ...................... read the options and run one command
+# =============================================================================
+
+set -Eeuo pipefail   # stop on errors, on unset variables, and on failed pipes
+shopt -s nullglob    # a glob that matches nothing expands to nothing (not itself)
+
+VERSION="1.2.0"
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"   # full path to this script
+PROG="$(basename "$SELF")"                   # "mwireless-setup"
+
+
+# =============================================================================
+# PART 1 — SETTINGS
+# Defaults live here. /etc/mwireless/mwireless.conf can override any of them.
+# =============================================================================
+
+MW_CONF="${MW_CONF:-/etc/mwireless/mwireless.conf}"
+
+# --- The network itself ---
+MW_SSID="MWireless"                     # Wi-Fi name to join
+MW_CON_NAME="MWireless"                 # name of the saved NetworkManager profile
+MW_REALM="umich.edu"                    # added to the uniqname: rob550xx -> rob550xx@umich.edu
+MW_RADIUS_DOMAIN="radius.umnet.umich.edu"   # server name we insist on (from JoinNow)
+MW_PRIORITY=20                          # auto-connect priority (JoinNow uses 20)
+MW_AUTOCONNECT_RETRIES=3                # NetworkManager gives up auto-connecting after this many fails
+MW_ALSO_EDUROAM="no"                    # "yes" = also save an eduroam profile
+MW_IFACE=""                             # Wi-Fi card; empty = find it automatically
+
+# --- Certificates ---
+# The one root CA we trust, identified by its SHA-256 fingerprint.
+MW_ROOT_CA_SHA256="E7:93:C9:B0:2F:D8:AA:13:E2:1C:31:22:8A:CC:B0:81:19:64:3B:74:9C:89:89:64:B1:74:6D:46:C3:D4:CB:D2"
+MW_ROOT_CA_SYSTEM_FILE="/etc/ssl/certs/USERTrust_RSA_Certification_Authority.pem"
+MW_SYSTEM_CA_STORE="/etc/ssl/certs/ca-certificates.crt"   # Ubuntu's list of all trusted CAs
+MW_CERT_DIR="/etc/mwireless/certs"      # root.pem + extra/ (cached intermediates)
+MW_BUNDLE="/etc/mwireless/ca-bundle.pem"   # the file NetworkManager actually reads
+
+# Where we look for newer certificates (only used when the robot is online).
+MW_DOC_URL="https://documentation.its.umich.edu/content/wifi-manually-configuring-your-ubuntu-linux-device-mwireless"
+MW_CERT_URLS="https://its.umich.edu/sites/default/files/incommon/InCommon-RSA-Server-CA-2.txt https://its.umich.edu/sites/default/files/incommon/2038-USERTrust-RSA-Certification-Authority.txt"
+
+# --- Clock ---
+# The Pi has no clock battery, so after a fresh flash its date is months old and
+# certificate date checks would fail. Options:
+#   always     = never fail because of the date (chain + server name are still checked)
+#   until-sync = skip date checks only until the clock has synced once
+#   never      = strict; the date must be right before connecting
+MW_DISABLE_TIME_CHECKS="always"
+
+# --- Timeouts (seconds) ---
+MW_CONNECT_TIMEOUT=60    # how long one "connect to MWireless" attempt may take
+MW_IP_TIMEOUT=30         # how long to wait for an IP address after connecting
+MW_NTP_TIMEOUT=60        # how long to wait for the clock to sync
+MW_DETACH_GRACE=5        # pause before switching the radio, so SSH can print our message
+MW_BOOT_WAIT=45          # at boot, how long the hotspot waits for MWireless
+
+# --- How this fits into the MBot image (mbot_sys_utils) ---
+MW_FALLBACK_CON="mbot_wifi_ap"                  # the robot's own hotspot profile
+MW_FALLBACK_SERVICE="mbot-start-network.service" # service that (re)creates the hotspot
+MW_AP_SUBNET_PREFIX="192.168.3."                # hotspot addresses; an IP here is NOT success
+MW_BOOT_CONFIG="/boot/firmware/mbot_config.txt" # SD-card config file (for zero-touch setup)
+MW_CONNECTIVITY_URL="http://connectivity-check.ubuntu.com/"   # used to test "is the internet there?"
+
+# --- Where we keep our own files ---
+MW_STATE_DIR="/var/lib/mwireless"
+MW_LOG_DIR="/var/log/mwireless"
+
+# Load the site config file (if present) so it can override anything above.
+# shellcheck source=/dev/null
+if [[ -r "$MW_CONF" ]]; then source "$MW_CONF"; fi
+
+# These are derived from the settings above — no need to change them.
+STATUS_FILE="$MW_STATE_DIR/status.txt"           # last result (also read by the login banner)
+PREV_CON_FILE="$MW_STATE_DIR/prev-connection"    # what to go back to if MWireless fails
+NMCLI_OUTPUT_FILE="$MW_STATE_DIR/last-nmcli.out" # nmcli's own words about the last attempt
+LOG_FILE="$MW_LOG_DIR/mwireless-setup.log"
+LOCK_FILE="/run/mwireless-setup.lock"
+CONNECT_UNIT="mwireless-connect"                 # name of the background systemd job
+
+# NetworkManager flag value meaning "don't check certificate dates" (needs NM 1.42+).
+NM_FLAG_SKIP_DATE_CHECK=8
+
+
+# =============================================================================
+# PART 2 — PRINTING AND LOGGING
+# Every message goes to the screen AND to the log file, so a student who lost
+# their SSH session can read what happened afterwards.
+# =============================================================================
+
+# University of Michigan theme, the same as the ROBuntu tools: maize #FFCB05 on
+# Michigan blue #00274C, bright body text, green only for success.
+# Colours only on a real terminal (not into a log or pipe); NO_COLOR=1 turns them off.
+if [[ -t 1 && "${TERM:-dumb}" != "dumb" && -z "${NO_COLOR:-}" ]]; then
+  MAIZE=$'\e[38;2;255;203;5m'; BLUE_BG=$'\e[48;2;0;39;76m'
+  SOFT=$'\e[38;2;190;199;211m'
+  SUCCESS=$'\e[38;5;84m'; BOLD=$'\e[1m'; RESET=$'\e[0m'
+else
+  MAIZE=""; BLUE_BG=""; SOFT=""; SUCCESS=""; BOLD=""; RESET=""
+fi
+
+UI_WIDTH="$(tput cols 2>/dev/null || echo 80)"
+[[ "$UI_WIDTH" =~ ^[0-9]+$ ]] || UI_WIDTH=80
+(( UI_WIDTH > 96 )) && UI_WIDTH=96
+(( UI_WIDTH < 64 )) && UI_WIDTH=64
+
+# One full-width Michigan-blue row with maize text (plain text without colours).
+blue_row() {
+  if [[ -n "$BLUE_BG" ]]; then
+    printf '%s%*s\r%s%s%s\n' "$BLUE_BG" "$UI_WIDTH" '' "$BLUE_BG$1" "$2" "$RESET"
+  else
+    printf '%s\n' "$2"
+  fi
+}
+
+banner() {
+  blue_row "$MAIZE" ''
+  blue_row "$MAIZE$BOLD" "  ███╗   ███╗     MWIRELESS SETUP  |  UNIVERSITY OF MICHIGAN ROBOTICS"
+  blue_row "$MAIZE$BOLD" "  ████╗ ████║     Connect this MBot to U-M MWireless"
+  blue_row "$MAIZE$BOLD" "  ██╔████╔██║     $PROG $VERSION"
+  blue_row "$MAIZE$BOLD" "  ██║╚██╔╝██║"
+  blue_row "$MAIZE$BOLD" "  ██║ ╚═╝ ██║     Robot $(hostname)"
+  blue_row "$MAIZE$BOLD" "  ╚═╝     ╚═╝     Wi-Fi card ${IFACE:-?}"
+  blue_row "$MAIZE" ''
+}
+
+# "STEP 1/4  TITLE" with a thin rule below.
+step() {
+  printf '\n%s STEP %s %s %s%s%s\n' "$BLUE_BG$MAIZE$BOLD" "$1" "$RESET" "$MAIZE$BOLD" "$2" "$RESET"
+  printf '%s%s%s\n' "$SOFT" "────────────────────────────────────────────────────────────" "$RESET"
+}
+
+# "  ▌ Key            value"
+key_value() {
+  printf '  %s▌%s %s%-14s%s %s\n' "$MAIZE" "$RESET" "$SOFT" "$1" "$RESET" "$2"
+}
+
+timestamp() { date '+%Y-%m-%d %H:%M:%S'; }
+
+# Append one line to the log file: "2026-10-09 10:00:00 [LEVEL] message".
+# Never fails (logging must not stop the script).
+write_log() {
+  local level="$1" message="$2"
+  if [[ -w "$MW_LOG_DIR" ]]; then
+    printf '%s [%s] %s\n' "$(timestamp)" "$level" "$message" >>"$LOG_FILE" 2>/dev/null || true
+  fi
+}
+
+info() { write_log INFO "$*"; printf '%s◆%s %s\n' "$MAIZE" "$RESET" "$*"; }
+ok()   { write_log OK   "$*"; printf '%s✔%s %s\n' "$SUCCESS" "$RESET" "$*"; }
+warn() { write_log WARN "$*"; printf '%s▲%s %s\n' "$MAIZE" "$RESET" "$*" >&2; }
+err()  { write_log ERR  "$*"; printf '\n%s  ERROR  %s %s\n\n' "$BLUE_BG$MAIZE$BOLD" "$RESET" "$*" >&2; }
+die()  { err "$*"; exit 1; }   # print an error and stop
+
+# True if a command is installed, e.g.  if have curl; then ...
+have() { command -v "$1" >/dev/null 2>&1; }
+
+usage() {
+  cat <<EOF
+${BOLD}$PROG $VERSION${RESET} — connect this MBot to U-M MWireless from a terminal (no GUI).
+
+${BOLD}Usage${RESET}
+  sudo $PROG                     Ask for uniqname + password, then connect.
+  sudo $PROG --user UNIQNAME     Ask only for the password.
+  sudo $PROG --status            Show connection, IP, certificate and clock status.
+  sudo $PROG --diagnose          Print recent NetworkManager/wpa_supplicant logs.
+  sudo $PROG --forget            Delete the MWireless profile and bring the hotspot back.
+  sudo $PROG --refresh-certs     Re-download and validate the ITS CA certificates (needs internet).
+
+${BOLD}Options${RESET}
+  -u, --user NAME          Uniqname (or uniqname@umich.edu).
+  -p, --password-file F    Read the password from the first line of F (F is NOT deleted).
+      --foreground         Do not detach (use when you're on Ethernet/another network).
+      --eduroam            Also create an eduroam profile with the same credentials.
+      --iface IFACE        Wi-Fi interface (default: auto, prefers wlan0).
+      --time 'YYYY-MM-DD HH:MM'  Set the clock first (only needed on very old NetworkManager).
+  -y, --yes                Don't ask for confirmation.
+  -h, --help               This help.   -V, --version   Print version.
+
+${BOLD}What happens${RESET}
+  1. Credentials are stored root-only in NetworkManager (like the JoinNow tool does).
+  2. If you're SSH'd in over the MBot hotspot, your SSH session WILL drop when the
+     radio switches to MWireless. The connection step keeps running in the background.
+  3. Success: the OLED shows a new campus IP (not 192.168.3.x). SSH to that IP.
+     Failure: the hotspot comes back in ~1 min. Reconnect and run: sudo $PROG --status
+EOF
+}
+
+
+# =============================================================================
+# PART 3 — SMALL HELPERS
+# =============================================================================
+
+# If we are not root, restart this same script with sudo (same arguments).
+require_root() {
+  if [[ $EUID -ne 0 ]]; then
+    have sudo || die "Run this as root."
+    exec sudo -E -- "$SELF" "$@"
+  fi
+}
+
+# Create our folders (safe to run every time).
+make_folders() {
+  install -d -m 0755 "$MW_STATE_DIR" "$MW_LOG_DIR" "$(dirname "$MW_BUNDLE")"
+  install -d -m 0755 "$MW_CERT_DIR" "$MW_CERT_DIR/extra"
+  touch "$LOG_FILE"
+  chmod 0644 "$LOG_FILE"
+}
+
+# Make sure only one copy of this script changes Wi-Fi at a time
+# (e.g. two students in two SSH windows). File descriptor 9 holds the lock
+# until the script exits.
+take_lock() {
+  exec 9>"$LOCK_FILE"
+  flock -n 9 || die "Another $PROG run is in progress. Wait for it or check: sudo $PROG --status"
+}
+
+# --- The status file ----------------------------------------------------------
+# Five plain lines, so both this script and the login banner can read it easily:
+#   line 1  RESULT   OK | FAILED | CONNECTING | FORGOTTEN
+#   line 2  REASON   e.g. AUTH, NOT_FOUND (empty on success)
+#   line 3  WHEN     time it was written
+#   line 4  HINT     one sentence telling the student what to do
+#   line 5  IP       the robot's current IP address
+save_status() {
+  local result="$1" reason="${2:-}" hint="${3:-}"
+  local tmp
+  tmp="$(mktemp "$MW_STATE_DIR/.status.XXXXXX")"
+  printf '%s\n%s\n%s\n%s\n%s\n' "$result" "$reason" "$(timestamp)" "$hint" "$(current_ipv4 || true)" >"$tmp"
+  chmod 0644 "$tmp"
+  mv -f "$tmp" "$STATUS_FILE"   # replace in one step, so readers never see half a file
+}
+
+# Read one line of the status file:  read_status RESULT | REASON | WHEN | HINT | IP
+read_status() {
+  local line
+  case "$1" in
+    RESULT) line=1 ;; REASON) line=2 ;; WHEN) line=3 ;; HINT) line=4 ;; IP) line=5 ;;
+  esac
+  if [[ -r "$STATUS_FILE" ]]; then sed -n "${line}p" "$STATUS_FILE"; fi
+}
+
+# True if this NetworkManager can skip certificate date checks (version 1.42 or newer).
+networkmanager_is_new_enough() {
+  local version oldest
+  version="$(nmcli --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1)"
+  [[ -n "$version" ]] || return 1
+  # sort -V puts the smaller version first; if 1.42 comes first, ours is >= 1.42
+  oldest="$(printf '%s\n1.42\n' "$version" | sort -V | head -n1)"
+  [[ "$oldest" == "1.42" ]]
+}
+
+# True if the clock has been set from the internet (NTP).
+clock_is_synced() {
+  [[ "$(timedatectl show -p NTPSynchronized --value 2>/dev/null || echo no)" == "yes" ]]
+}
+
+
+# =============================================================================
+# PART 4 — ASKING NETWORKMANAGER
+# nmcli is NetworkManager's command-line tool. "-g FIELD" prints just one value.
+# =============================================================================
+
+# Find the Wi-Fi card. Prefer wlan0 (the Pi's built-in card), else the first one.
+find_wifi_card() {
+  if [[ -n "$MW_IFACE" ]]; then
+    echo "$MW_IFACE"
+    return
+  fi
+  local cards
+  cards="$(nmcli -t -f DEVICE,TYPE device status 2>/dev/null | awk -F: '$2=="wifi" {print $1}')"
+  [[ -n "$cards" ]] || return 1
+  if grep -qx wlan0 <<<"$cards"; then echo wlan0; else head -n1 <<<"$cards"; fi
+}
+
+# Name of the connection currently using a card (e.g. "mbot_wifi_ap"), or empty.
+connection_on() {
+  local name
+  name="$(nmcli -g GENERAL.CONNECTION device show "$1" 2>/dev/null || true)"
+  if [[ "$name" == "--" ]]; then name=""; fi   # nmcli prints "--" for "none"
+  echo "$name"
+}
+
+# The card's state as a number. 100 means "connected".
+card_state() {
+  nmcli -g GENERAL.STATE device show "$1" 2>/dev/null | awk '{print $1}'
+}
+
+# The robot's IPv4 address on the Wi-Fi card (without the /24), or empty.
+current_ipv4() {
+  local card="${IFACE:-}"
+  if [[ -z "$card" ]]; then card="$(find_wifi_card 2>/dev/null || true)"; fi
+  if [[ -z "$card" ]]; then return 0; fi
+  nmcli -g IP4.ADDRESS device show "$card" 2>/dev/null | head -n1 | cut -d/ -f1
+}
+
+# True if a saved profile with this exact name exists.
+profile_exists() {
+  nmcli -t -f NAME connection show 2>/dev/null | grep -Fx -- "$1" >/dev/null
+}
+
+# Delete every saved Wi-Fi profile for an SSID. This removes old copies such as
+# "MWireless [1a2b3c4d]" made by JoinNow, so they don't compete with ours.
+delete_profiles_for() {
+  local wanted_ssid="$1"
+  local uuid type ssid name
+  # One line per saved profile: "<uuid>:<type>"
+  while IFS=: read -r uuid type; do
+    [[ "$type" == "802-11-wireless" ]] || continue                      # skip wired, etc.
+    ssid="$(nmcli -g 802-11-wireless.ssid connection show "$uuid" 2>/dev/null || true)"
+    [[ "$ssid" == "$wanted_ssid" ]] || continue                          # different network
+    name="$(nmcli -g connection.id connection show "$uuid" 2>/dev/null || echo "$uuid")"
+    if nmcli connection delete uuid "$uuid" >/dev/null 2>&1; then
+      info "Removed old profile '$name' for SSID $wanted_ssid"
+    fi
+  done < <(nmcli -t -f UUID,TYPE connection show 2>/dev/null)
+}
+
+# True if some SSH session is using an address on this card. If so, switching the
+# card to MWireless will cut that session off. (We check open sockets because
+# sudo usually hides the $SSH_CONNECTION variable.)
+ssh_uses_card() {
+  local card="$1" my_ips local_addr
+  my_ips="$(ip -o -4 addr show dev "$card" 2>/dev/null | awk '{print $4}' | cut -d/ -f1)"
+  [[ -n "$my_ips" ]] || return 1
+
+  # Local address of every established SSH connection, e.g. "192.168.3.1:22"
+  while read -r local_addr; do
+    local_addr="${local_addr%:*}"                        # drop ":22"
+    local_addr="${local_addr#[}"; local_addr="${local_addr%]}"   # drop IPv6 brackets
+    if grep -Fx -- "$local_addr" <<<"$my_ips" >/dev/null; then return 0; fi
+  done < <(ss -Htn state established '( sport = :22 )' 2>/dev/null | awk '{print $3}')
+
+  # Fallback: the SSH_CONNECTION variable, if sudo kept it.
+  if [[ -n "${SSH_CONNECTION:-}" ]]; then
+    local server_ip
+    server_ip="$(awk '{print $3}' <<<"$SSH_CONNECTION")"
+    grep -Fx -- "$server_ip" <<<"$my_ips" >/dev/null && return 0
+  fi
+  return 1
+}
+
+
+# =============================================================================
+# PART 5 — CERTIFICATES
+#
+# NetworkManager reads ONE file of trusted CAs: $MW_BUNDLE. It contains:
+#   * the pinned USERTrust root (always), and
+#   * any extra intermediate CAs we cached in $MW_CERT_DIR/extra/.
+# The pinned root is never removed, so a bad download can't break Wi-Fi.
+# =============================================================================
+
+# SHA-256 fingerprint of a certificate file, in upper case "AA:BB:..." form.
+fingerprint() {
+  openssl x509 -in "$1" -noout -fingerprint -sha256 2>/dev/null | sed 's/^.*=//' | tr 'a-f' 'A-F'
+}
+
+pinned_fingerprint() { tr 'a-f' 'A-F' <<<"$MW_ROOT_CA_SHA256"; }
+
+# A PEM file can hold several certificates. Split it into one file per
+# certificate inside FOLDER, and print the new file names (one per line).
+split_certificates() {
+  local pem_file="$1" folder="$2"
+  awk -v dir="$folder" '
+    /-----BEGIN CERTIFICATE-----/ { n++; out = sprintf("%s/cert-%03d.pem", dir, n); inside = 1 }
+    inside                        { print > out }
+    /-----END CERTIFICATE-----/   { inside = 0; close(out) }
+  ' "$pem_file"
+  local f
+  for f in "$folder"/cert-*.pem; do echo "$f"; done
+}
+
+# Simple yes/no questions about one certificate file.
+cert_is_valid_today() { openssl x509 -in "$1" -noout -checkend 0 >/dev/null 2>&1; }
+cert_is_a_ca()        { [[ "$(openssl x509 -in "$1" -noout -text 2>/dev/null)" == *"CA:TRUE"* ]]; }
+cert_is_a_root() {   # a root CA signs itself: its subject and issuer are the same
+  local subject issuer
+  subject="$(openssl x509 -in "$1" -noout -subject -nameopt RFC2253 2>/dev/null | sed 's/^subject=//')"
+  issuer="$(openssl x509 -in "$1" -noout -issuer -nameopt RFC2253 2>/dev/null | sed 's/^issuer=//')"
+  [[ "$subject" == "$issuer" ]]
+}
+
+# True if a certificate with this fingerprint is in Ubuntu's trusted CA list.
+os_trusts_fingerprint() {
+  local wanted="$1" tmp f found=1
+  tmp="$(mktemp -d)"
+  while read -r f; do
+    if [[ "$(fingerprint "$f")" == "$wanted" ]]; then found=0; break; fi
+  done < <(split_certificates "$MW_SYSTEM_CA_STORE" "$tmp")
+  rm -rf "$tmp"
+  return $found
+}
+
+# Find the pinned USERTrust root on this robot and print its path.
+# Looks in: the usual Ubuntu file -> any file in /etc/ssl/certs -> our own cached copy.
+find_root_ca() {
+  local f
+  for f in "$MW_ROOT_CA_SYSTEM_FILE" /etc/ssl/certs/*.pem "$MW_CERT_DIR/root.pem"; do
+    [[ -r "$f" ]] || continue
+    if [[ "$(fingerprint "$f")" == "$(pinned_fingerprint)" ]]; then
+      echo "$f"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Write $MW_BUNDLE = pinned root + every cached extra CA that is still valid.
+build_bundle() {
+  local root tmp f extras=0
+
+  root="$(find_root_ca)" || { err "USERTrust RSA root CA not found (is ca-certificates installed?)"; return 1; }
+  # Keep our own copy of the root, in case the system file disappears later.
+  [[ -r "$MW_CERT_DIR/root.pem" ]] || install -m 0644 "$root" "$MW_CERT_DIR/root.pem"
+
+  # Build the new bundle in a temporary file first.
+  tmp="$(mktemp "$(dirname "$MW_BUNDLE")/.bundle.XXXXXX")"
+  cat "$root" >"$tmp"
+  for f in "$MW_CERT_DIR"/extra/*.pem; do
+    # Only drop "expired" certs if our clock is trustworthy — a robot that thinks
+    # it is 2026-01 must not throw away certificates because of its own bad date.
+    if cert_is_valid_today "$f" || ! clock_is_synced; then
+      cat "$f" >>"$tmp"
+      extras=$((extras + 1))
+    else
+      warn "Dropping expired cached CA $(basename "$f")"
+      rm -f "$f"
+    fi
+  done
+  chmod 0644 "$tmp"
+
+  # Nothing changed? Then keep the old file and stop here.
+  if [[ -r "$MW_BUNDLE" ]] && cmp -s "$tmp" "$MW_BUNDLE"; then
+    rm -f "$tmp"
+    return 0
+  fi
+
+  # Keep a backup, then swap the new bundle in.
+  [[ -r "$MW_BUNDLE" ]] && cp -f "$MW_BUNDLE" "$MW_BUNDLE.bak"
+  mv -f "$tmp" "$MW_BUNDLE"
+  info "CA bundle written: $MW_BUNDLE (root + $extras extra)"
+}
+
+# Make sure the bundle exists and still contains the pinned root; rebuild if not.
+ensure_bundle() {
+  if [[ -r "$MW_BUNDLE" ]]; then
+    local tmp f root_found=no
+    tmp="$(mktemp -d)"
+    while read -r f; do
+      if [[ "$(fingerprint "$f")" == "$(pinned_fingerprint)" ]]; then root_found=yes; fi
+    done < <(split_certificates "$MW_BUNDLE" "$tmp")
+    rm -rf "$tmp"
+    [[ "$root_found" == yes ]] && return 0
+    warn "CA bundle is missing the pinned root, rebuilding"
+  fi
+  build_bundle
+}
+
+# Download newer CA certificates from ITS (only works when online).
+#   1. Read the ITS MWireless web page and collect every certificate link on it.
+#   2. Download each certificate and accept it ONLY if:
+#        - it is a CA, and valid today, and
+#        - an intermediate:  it chains to a CA Ubuntu already trusts
+#        - a root:           Ubuntu already trusts it (or it is our pinned root)
+#   3. Rebuild the bundle (the pinned root is always kept).
+refresh_certs() {
+  have curl || { warn "curl not installed; skipping certificate refresh"; return 0; }
+  # Validity dates mean nothing if our own clock is wrong.
+  if ! clock_is_synced; then
+    warn "Clock not NTP-synchronized; skipping certificate refresh (validity dates can't be trusted)"
+    return 0
+  fi
+
+  local tmp urls="$MW_CERT_URLS" accepted=0 n=0
+  tmp="$(mktemp -d)"
+
+  # --- Step 1: read the ITS page for certificate links -----------------------
+  if curl -fsSL --max-time 20 --max-filesize 2000000 -o "$tmp/page.html" "$MW_DOC_URL" 2>/dev/null; then
+    local links named_ca
+    links="$(grep -oE 'https?://its\.umich\.edu/sites/default/files/incommon/[A-Za-z0-9._%-]+\.(txt|pem|crt|cer)' "$tmp/page.html" | sort -u || true)"
+    [[ -n "$links" ]] && urls="$urls $links"
+
+    # The page also names a CA file like /etc/ssl/certs/<name>.pem. If ITS ever
+    # names a different one that Ubuntu already has, add it to the bundle too.
+    named_ca="$(grep -oE '/etc/ssl/certs/[A-Za-z0-9._-]+\.pem' "$tmp/page.html" | head -n1 || true)"
+    if [[ -n "$named_ca" && "$named_ca" != "$MW_ROOT_CA_SYSTEM_FILE" ]]; then
+      warn "ITS doc now names CA file $named_ca (configured: $MW_ROOT_CA_SYSTEM_FILE)"
+      if [[ -r "$named_ca" ]]; then
+        install -m 0644 "$named_ca" "$MW_CERT_DIR/extra/$(fingerprint "$named_ca" | tr -d ':').pem"
+        info "Added OS-trusted $named_ca to the bundle (pinned root kept)"
+      fi
+    fi
+  else
+    warn "Could not fetch ITS doc page ($MW_DOC_URL); using configured URLs only"
+  fi
+
+  # --- Step 2: download and check each certificate ---------------------------
+  local url
+  for url in $(tr ' ' '\n' <<<"$urls" | sed '/^$/d' | sort -u); do
+    n=$((n + 1))
+    local download="$tmp/download-$n" split_dir="$tmp/split-$n"
+    mkdir -p "$split_dir"
+
+    if ! curl -fsSL --max-time 20 --max-filesize 200000 -o "$download" "$url" 2>/dev/null; then
+      warn "Download failed: $url"
+      continue
+    fi
+    # Some files are binary (DER) instead of text (PEM); convert those.
+    if ! grep -q 'BEGIN CERTIFICATE' "$download"; then
+      if ! openssl x509 -inform DER -in "$download" -out "$download.pem" 2>/dev/null; then
+        warn "Not a certificate: $url"
+        continue
+      fi
+      download="$download.pem"
+    fi
+
+    local cert fp
+    while read -r cert; do
+      fp="$(fingerprint "$cert")"
+      [[ -n "$fp" ]] || continue
+      if ! cert_is_valid_today "$cert"; then warn "Expired/not-yet-valid cert from $url — ignored"; continue; fi
+      if ! cert_is_a_ca "$cert";        then warn "Not a CA cert from $url — ignored"; continue; fi
+
+      if cert_is_a_root "$cert"; then
+        # The pinned root is always in the bundle anyway — nothing to do.
+        [[ "$fp" == "$(pinned_fingerprint)" ]] && continue
+        # Any other root must already be trusted by Ubuntu.
+        if ! os_trusts_fingerprint "$fp"; then
+          warn "Root CA from $url is not in the OS trust store — ignored"
+          continue
+        fi
+      else
+        # An intermediate must chain up to a CA Ubuntu trusts.
+        if ! openssl verify -CAfile "$MW_SYSTEM_CA_STORE" "$cert" >/dev/null 2>&1; then
+          warn "Intermediate from $url does not chain to the OS trust store — ignored"
+          continue
+        fi
+      fi
+
+      # Passed every check: cache it (file name = its fingerprint, so no duplicates).
+      install -m 0644 "$cert" "$MW_CERT_DIR/extra/$(tr -d ':' <<<"$fp").pem"
+      accepted=$((accepted + 1))
+    done < <(split_certificates "$download" "$split_dir")
+  done
+  rm -rf "$tmp"
+
+  # --- Step 3: rebuild the bundle --------------------------------------------
+  build_bundle
+  echo "$(timestamp) accepted=$accepted" >"$MW_STATE_DIR/cert-refresh-last"
+  ok "Certificate refresh done ($accepted cert(s) validated from ITS sources)"
+}
+
+
+# =============================================================================
+# PART 6 — CLOCK
+# =============================================================================
+
+# Never let the clock be earlier than the newest time we have seen before:
+# the last NTP sync, the last good connection, or the date the image was built.
+# (A freshly flashed robot otherwise starts at whatever date the image was made.)
+move_clock_forward_if_behind() {
+  local newest=0 t f
+  for f in /var/lib/systemd/timesync/clock "$MW_STATE_DIR/last-good-time" /etc/mwireless/build-epoch; do
+    [[ -e "$f" ]] || continue
+    if [[ "$f" == */clock ]]; then
+      t="$(stat -c %Y "$f" 2>/dev/null || echo 0)"      # timesyncd stores it as the file's date
+    else
+      t="$(tr -dc '0-9' <"$f" 2>/dev/null || echo 0)"   # our files store seconds-since-1970
+    fi
+    if [[ -n "$t" && "$t" -gt "$newest" ]]; then newest="$t"; fi
+  done
+  if [[ "$newest" -gt "$(date +%s)" ]]; then
+    date -s "@$newest" >/dev/null && info "Clock was behind; moved forward to $(date)"
+  fi
+}
+
+# After connecting: get the correct time from the internet.
+# Try NTP first; if the network blocks NTP, read the "Date:" header of a web page.
+sync_clock() {
+  timedatectl set-ntp true >/dev/null 2>&1 || true
+
+  local waited
+  for ((waited = 0; waited < MW_NTP_TIMEOUT; waited += 3)); do
+    clock_is_synced && break
+    sleep 3
+  done
+  if clock_is_synced; then
+    ok "Clock synchronized via NTP: $(date)"
+    return 0
+  fi
+
+  if have curl; then
+    local web_date
+    web_date="$(curl -sI --max-time 10 "$MW_CONNECTIVITY_URL" 2>/dev/null | tr -d '\r' \
+                | awk -F': ' 'tolower($1) == "date" {print $2}')"
+    if [[ -n "$web_date" ]] && date -s "$web_date" >/dev/null 2>&1; then
+      ok "Clock set from HTTP Date header: $(date)"
+      return 0
+    fi
+  fi
+  warn "Could not synchronize the clock (NTP and HTTP both failed)"
+  return 1
+}
+
+
+# =============================================================================
+# PART 7 — USERNAME AND PASSWORD
+# =============================================================================
+
+USER_IN=""   # what the student typed (or --user)
+PASS_IN=""   # the password (from the prompt or --password-file)
+
+# Turn whatever was typed into "uniqname@umich.edu" (same rule as JoinNow):
+#   " ROB550XX "          -> rob550xx@umich.edu
+#   "rob550xx@umich.edu"  -> rob550xx@umich.edu   (not added twice)
+#   "someone@other.edu"   -> left as it is
+make_identity() {
+  local name
+  name="$(printf '%s' "$1" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
+  name="${name%@"$MW_REALM"}"
+  if [[ "$name" == *@* ]]; then
+    echo "$name"
+  else
+    echo "$name@$MW_REALM"
+  fi
+}
+
+# A uniqname may only contain lower-case letters, digits, dot, dash, underscore.
+is_valid_identity() {
+  local name="${1%@*}"   # the part before "@"
+  [[ -n "$name" && "$name" =~ ^[a-z0-9._-]+$ ]]
+}
+
+# Ask for anything not already given on the command line.
+ask_for_credentials() {
+  if [[ -z "$USER_IN" ]]; then
+    [[ -t 0 ]] || die "No terminal to ask for the uniqname. Use --user."
+    printf '\n  %s›%s U-M uniqname %s(course account, e.g. rob550xx)%s: ' "$MAIZE" "$RESET" "$SOFT" "$RESET"
+    read -r USER_IN
+  fi
+  is_valid_identity "$(make_identity "$USER_IN")" || die "Invalid uniqname: '$USER_IN'"
+
+  if [[ -z "$PASS_IN" ]]; then
+    [[ -t 0 ]] || die "No terminal to ask for the password. Use --password-file."
+    local again
+    # -s hides typing; IFS= keeps spaces at the ends
+    printf '  %s PASSWORD %s ' "$BLUE_BG$MAIZE$BOLD" "$RESET"; IFS= read -r -s PASS_IN; echo
+    printf '  %s  AGAIN   %s ' "$BLUE_BG$MAIZE$BOLD" "$RESET"; IFS= read -r -s again;   echo
+    [[ "$PASS_IN" == "$again" ]] || die "Passwords do not match."
+  fi
+  [[ -n "$PASS_IN" ]] || die "Empty password."
+}
+
+
+# =============================================================================
+# PART 8 — CREATE THE PROFILE
+# This is the heart of the script: one nmcli command that saves the same
+# settings the official JoinNow tool would.
+# =============================================================================
+
+# Which value to put in 802-1x.phase1-auth-flags: 8 = skip date checks, 0 = normal.
+date_check_flag() {
+  case "$MW_DISABLE_TIME_CHECKS" in
+    never)      echo 0 ;;
+    until-sync) if clock_is_synced; then echo 0; else echo "$NM_FLAG_SKIP_DATE_CHECK"; fi ;;
+    *)          echo "$NM_FLAG_SKIP_DATE_CHECK" ;;
+  esac
+}
+
+save_profile() {
+  local name="$1" ssid="$2" priority="$3" identity="$4" password="$5"
+  local flag
+  flag="$(date_check_flag)"
+
+  # Older NetworkManager doesn't know the "skip date checks" flag.
+  if [[ "$flag" != 0 ]] && ! networkmanager_is_new_enough; then
+    warn "NetworkManager < 1.42 cannot skip certificate time checks; the clock must be correct."
+    flag=0
+  fi
+
+  # Start clean: remove old profiles for this network (ours and JoinNow's).
+  delete_profiles_for "$ssid"
+  if profile_exists "$name"; then nmcli connection delete id "$name" >/dev/null 2>&1 || true; fi
+
+  # Save the profile. Each line is one setting:
+  #   connection.*  -> join automatically, with this priority
+  #   wifi-sec.*    -> WPA2-Enterprise
+  #   802-1x.*      -> PEAP + MSCHAPv2, username/password, trusted CA, server name
+  #   password-flags 0 = NetworkManager stores the password itself (root-only file).
+  #                      Needed because there is no desktop keyring on a headless robot.
+  # Note: the password is visible in the process list for a split second while
+  # nmcli runs. On a single-user robot that is acceptable.
+  nmcli connection add type wifi con-name "$name" ifname "*" ssid "$ssid" -- \
+    connection.autoconnect          yes \
+    connection.autoconnect-priority "$priority" \
+    connection.autoconnect-retries  "$MW_AUTOCONNECT_RETRIES" \
+    802-11-wireless.mode            infrastructure \
+    wifi-sec.key-mgmt               wpa-eap \
+    802-1x.eap                      peap \
+    802-1x.phase2-auth              mschapv2 \
+    802-1x.identity                 "$identity" \
+    802-1x.password                 "$password" \
+    802-1x.password-flags           0 \
+    802-1x.ca-cert                  "$MW_BUNDLE" \
+    802-1x.domain-suffix-match      "$MW_RADIUS_DOMAIN" \
+    802-1x.phase1-auth-flags        "$flag" \
+    ipv4.method                     auto \
+    ipv6.method                     auto \
+    >/dev/null || die "nmcli failed to create the '$name' profile"
+
+  ok "Profile '$name' saved (SSID $ssid, PEAP/MSCHAPv2, server $MW_RADIUS_DOMAIN, time-check-flag=$flag)"
+}
+
+
+# =============================================================================
+# PART 9 — CONNECT
+# This part runs as a background systemd job (see start_background_connect),
+# so it keeps going after the student's SSH session drops.
+# =============================================================================
+
+# Look through the logs from this attempt and name the most likely cause.
+# Checked in order: certificate problems first, then wrong password, etc.
+why_did_it_fail() {
+  local since="$1" logs
+  logs="$(journalctl -q --no-pager --since "@$since" -u NetworkManager -u wpa_supplicant 2>/dev/null || true)"
+  logs+=$'\n'"$(cat "$NMCLI_OUTPUT_FILE" 2>/dev/null || true)"
+
+  if   grep -qiE 'not yet valid|certificate has expired|cert.*expired'                         <<<"$logs"; then echo CERT_TIME
+  elif grep -qiE 'domain.?suffix.?mismatch|domain mismatch|altsubject'                         <<<"$logs"; then echo CERT_NAME
+  elif grep -qiE 'TLS-CERT-ERROR|certificate verification failed|unable to get local issuer|self.signed' <<<"$logs"; then echo CERT
+  elif grep -qiE 'EAP-FAILURE|EAP authentication failed|MSCHAPV2.*fail|no-secrets|Secrets were required|E=691' <<<"$logs"; then echo AUTH
+  elif grep -qiE 'ssid-not-found|No network with SSID|network could not be found'             <<<"$logs"; then echo NOT_FOUND
+  elif grep -qiE 'ip-config-unavailable|dhcp.*(timeout|timed out)'                             <<<"$logs"; then echo DHCP
+  else echo UNKNOWN
+  fi
+}
+
+# One sentence telling the student what to do about each failure.
+hint_for() {
+  case "$1" in
+    AUTH)        echo "Wrong uniqname or password (course creds?). Auto-connect was turned OFF so the shared account doesn't get locked. Re-run: sudo $PROG" ;;
+    NOT_FOUND)   echo "MWireless not in range. Profile kept; it will auto-connect on campus. Or re-run later." ;;
+    CERT_TIME)   echo "Clock/certificate validity problem. Run: sudo $PROG --time 'YYYY-MM-DD HH:MM' (today's date)." ;;
+    CERT_NAME)   echo "RADIUS server name changed? Check MW_RADIUS_DOMAIN in $MW_CONF against the latest JoinNow profile." ;;
+    CERT)        echo "CA certificate rejected. Run: sudo $PROG --diagnose, and report to the lab staff." ;;
+    DHCP)        echo "Authenticated but no IP address (DHCP). Try again in a minute or move closer to an AP." ;;
+    NO_INTERNET) echo "Got an IP but no internet access. Check MWireless status / ITS outages." ;;
+    *)           echo "Unknown failure. Run: sudo $PROG --diagnose" ;;
+  esac
+}
+
+# Bring back whatever the robot was using before (normally its hotspot), so the
+# student can SSH in again and read the error.
+go_back_to_previous_network() {
+  local previous="$1" attempt
+
+  # At boot, mbot-start-network runs right after us and handles the hotspot.
+  [[ -n "${MW_IN_BOOT:-}" ]] && return 0
+
+  # 1st choice: the exact connection we were on before.
+  if [[ -n "$previous" && "$previous" != "$MW_CON_NAME" ]] && profile_exists "$previous"; then
+    for attempt in 1 2 3; do
+      if nmcli --wait 30 connection up id "$previous" >/dev/null 2>&1; then
+        info "Restored previous connection '$previous'"
+        return 0
+      fi
+      sleep 5
+    done
+  fi
+
+  # 2nd choice: let the MBot's own network service rebuild the hotspot.
+  if systemctl cat "$MW_FALLBACK_SERVICE" >/dev/null 2>&1; then
+    info "Restarting $MW_FALLBACK_SERVICE to bring the hotspot back"
+    systemctl restart "$MW_FALLBACK_SERVICE" >/dev/null 2>&1 || true
+  # 3rd choice: start the hotspot profile directly.
+  elif profile_exists "$MW_FALLBACK_CON"; then
+    nmcli --wait 30 connection up id "$MW_FALLBACK_CON" >/dev/null 2>&1 || true
+  fi
+}
+
+# True if the internet is reachable. Tries three different ways, because
+# campus networks sometimes block one of them.
+internet_works() {
+  local nm_says
+  nm_says="$(nmcli networking connectivity check 2>/dev/null || echo unknown)"
+  [[ "$nm_says" == full ]] && return 0
+  if have curl && curl -fsS --max-time 8 -o /dev/null "$MW_CONNECTIVITY_URL" 2>/dev/null; then return 0; fi
+  if ping -c1 -W3 1.1.1.1 >/dev/null 2>&1; then return 0; fi
+  # NetworkManager may have its check turned off; then a default route via Wi-Fi is good enough.
+  if [[ "$nm_says" == unknown && "$(ip route show default 2>/dev/null)" == *" dev $IFACE "* ]]; then return 0; fi
+  return 1
+}
+
+# Wait (up to MW_IP_TIMEOUT) for a real campus IP, i.e. not a hotspot 192.168.3.x one.
+wait_for_campus_ip() {
+  local second ip
+  for ((second = 0; second < MW_IP_TIMEOUT; second++)); do
+    ip="$(current_ipv4)"
+    if [[ -n "$ip" && "$ip" != "$MW_AP_SUBNET_PREFIX"* ]]; then return 0; fi
+    sleep 1
+  done
+  return 1
+}
+
+# Try to bring MWireless up. At most 2 attempts — but only 1 if the password
+# was wrong, so 30 robots don't lock out the shared course account.
+bring_up_mwireless() {
+  local started_at="$1" attempt
+  for attempt in 1 2; do
+    if nmcli --wait "$MW_CONNECT_TIMEOUT" connection up id "$MW_CON_NAME" ifname "$IFACE" \
+         >>"$NMCLI_OUTPUT_FILE" 2>&1; then
+      return 0
+    fi
+    write_log NMCLI "$(tail -n 2 "$NMCLI_OUTPUT_FILE" | tr '\n' ' ')"
+    [[ "$(why_did_it_fail "$started_at")" == AUTH ]] && return 1   # wrong password: stop now
+    if [[ $attempt -lt 2 ]]; then
+      info "Attempt $attempt failed, retrying in 10 s"
+      sleep 10
+    fi
+  done
+  return 1
+}
+
+# Things to do once connected.
+after_success() {
+  # At boot: don't hold up the hotspot service. The system syncs the clock by
+  # itself and the weekly timer refreshes certificates.
+  if [[ -n "${MW_IN_BOOT:-}" ]]; then
+    timedatectl set-ntp true >/dev/null 2>&1 || true
+    return 0
+  fi
+  sync_clock || true
+  # "until-sync" mode: the clock is right now, so switch date checks back on.
+  if [[ "$MW_DISABLE_TIME_CHECKS" == until-sync ]] && clock_is_synced; then
+    nmcli connection modify id "$MW_CON_NAME" 802-1x.phase1-auth-flags 0 >/dev/null 2>&1 \
+      && info "Clock synced: re-enabled certificate time checks for future connections"
+  fi
+  date +%s >"$MW_STATE_DIR/last-good-time"
+  refresh_certs || warn "Certificate refresh failed (not fatal)"
+}
+
+# The whole connect step: switch -> check -> success or roll back.
+connect_now() {
+  make_folders
+  IFACE="$(find_wifi_card)" || { save_status FAILED NO_WIFI "No Wi-Fi interface found"; die "No Wi-Fi interface"; }
+
+  local previous started_at reason="" ip
+  previous="$(cat "$PREV_CON_FILE" 2>/dev/null || true)"
+  started_at="$(date +%s)"
+  : >"$NMCLI_OUTPUT_FILE"     # empty the nmcli output file for this attempt
+
+  # Give the SSH session a moment to show our message before the radio switches.
+  [[ -z "${MW_IN_BOOT:-}" ]] && sleep "$MW_DETACH_GRACE"
+
+  # Make sure Wi-Fi is switched on.
+  rfkill unblock wifi >/dev/null 2>&1 || true
+  nmcli radio wifi on >/dev/null 2>&1 || true
+  info "Switching $IFACE to $MW_SSID (previous: ${previous:-none})"
+
+  # Try to connect, then check we really got a campus IP.
+  if bring_up_mwireless "$started_at"; then
+    if wait_for_campus_ip; then
+      ip="$(current_ipv4)"
+      if ! internet_works; then
+        warn "Connected with IP $ip but internet check failed (continuing; campus filtering?)"
+      fi
+      # ---- SUCCESS ----
+      ok "Connected to $MW_SSID on $IFACE with IP $ip"
+      save_status OK "" "SSH to $ip (same network as your laptop)"
+      date +%s >"$MW_STATE_DIR/last-good-time"
+      rm -f "$PREV_CON_FILE"
+      after_success
+      save_status OK "" "SSH to $(current_ipv4) (same network as your laptop)"
+      return 0
+    fi
+    reason=DHCP   # connected, but never got an address
+  fi
+
+  # ---- FAILURE ----
+  [[ -n "$reason" ]] || reason="$(why_did_it_fail "$started_at")"
+  err "MWireless connection failed: $reason"
+  if [[ "$reason" == AUTH ]]; then
+    # Wrong password: stop NetworkManager from retrying it by itself.
+    nmcli connection modify id "$MW_CON_NAME" connection.autoconnect no >/dev/null 2>&1 || true
+  fi
+  nmcli connection down id "$MW_CON_NAME" >/dev/null 2>&1 || true
+  save_status FAILED "$reason" "$(hint_for "$reason")"
+  go_back_to_previous_network "$previous"
+  return 1
+}
+
+# Start connect_now as a separate systemd job. The SSH session can then die
+# without taking the job with it.
+start_background_connect() {
+  local previous="$1"
+  echo -n "$previous" >"$PREV_CON_FILE"
+  save_status CONNECTING "" "Connecting… check again in a minute: sudo $PROG --status"
+
+  # Clear any leftover job with the same name.
+  systemctl stop "$CONNECT_UNIT" >/dev/null 2>&1 || true
+  systemctl reset-failed "$CONNECT_UNIT" >/dev/null 2>&1 || true
+
+  if have systemd-run && systemd-run --quiet --collect --unit="$CONNECT_UNIT" \
+       --description="MWireless connect (mwireless-setup)" \
+       --property=Type=exec --setenv=MW_CONF="$MW_CONF" \
+       "$SELF" --_connect-phase; then
+    return 0
+  fi
+  # No systemd? Fall back to a detached background process.
+  warn "systemd-run unavailable; falling back to setsid/nohup"
+  setsid nohup "$SELF" --_connect-phase >>"$LOG_FILE" 2>&1 </dev/null &
+}
+
+# While the background job runs, show its log lines to the student
+# (useful when the SSH session survives, e.g. on Ethernet).
+show_progress() {
+  local give_up_at=$(( $(date +%s) + MW_DETACH_GRACE + MW_CONNECT_TIMEOUT * 2 + MW_IP_TIMEOUT + MW_NTP_TIMEOUT + 30 ))
+  local lines_shown
+  lines_shown="$(wc -l <"$LOG_FILE")"
+
+  while [[ $(date +%s) -lt $give_up_at ]]; do
+    # Print new log lines without the "date time [LEVEL]" prefix.
+    sed -n "$((lines_shown + 1)),\$p" "$LOG_FILE" | sed -E 's/^[0-9-]+ [0-9:]+ \[[A-Z]+\] /  /'
+    lines_shown="$(wc -l <"$LOG_FILE")"
+    [[ "$(read_status RESULT)" != CONNECTING ]] && break
+    sleep 2
+  done
+
+  case "$(read_status RESULT)" in
+    OK)     ok "MWireless is up. IP: $(read_status IP)"; return 0 ;;
+    FAILED) err "Failed: $(read_status REASON) — $(read_status HINT)"; return 1 ;;
+    *)      warn "Still connecting; check: sudo $PROG --status"; return 0 ;;
+  esac
+}
+
+
+# =============================================================================
+# PART 10 — COMMANDS
+# =============================================================================
+
+# ---- sudo mwireless-setup  (the normal case) --------------------------------
+cmd_setup() {
+  local foreground="$1" assume_yes="$2" set_time="$3" also_eduroam="$4"
+
+  # 1. Checks
+  make_folders
+  take_lock
+  have nmcli || die "nmcli (NetworkManager) is not installed"
+  systemctl is-active --quiet NetworkManager || die "NetworkManager is not running"
+  IFACE="$(find_wifi_card)" || die "No Wi-Fi interface found (is Wi-Fi blocked? try: rfkill list)"
+  [[ -t 1 ]] && clear 2>/dev/null
+  banner
+  step "1/4" "SYSTEM CHECK"
+  ok "NetworkManager running, Wi-Fi card $IFACE"
+
+  # 2. Clock and certificates
+  step "2/4" "CLOCK AND CERTIFICATES"
+  if [[ -n "$set_time" ]]; then
+    date -s "$set_time" >/dev/null || die "Bad --time value"
+    info "Clock set to $(date)"
+  fi
+  move_clock_forward_if_behind
+  ensure_bundle || die "CA certificate bundle unavailable"
+  ok "Clock $(date '+%Y-%m-%d %H:%M'), certificates ready"
+
+  # 3. Credentials
+  step "3/4" "COURSE ACCOUNT"
+  ask_for_credentials
+  local identity
+  identity="$(make_identity "$USER_IN")"
+  echo
+  key_value "Identity" "$identity"
+  key_value "Network" "$MW_SSID (PEAP/MSCHAPv2)"
+  key_value "Server" "$MW_RADIUS_DOMAIN"
+
+  # 4. Will this SSH session drop? (Yes, if it runs over the card we're switching.)
+  local previous ssh_will_drop=no
+  previous="$(connection_on "$IFACE")"
+  ssh_uses_card "$IFACE" && ssh_will_drop=yes
+  if [[ "$ssh_will_drop" == yes && "$foreground" -eq 1 ]]; then
+    warn "--foreground ignored: you're SSH'd in over $IFACE and would lose the session mid-setup."
+    foreground=0
+  fi
+  if [[ "$ssh_will_drop" == yes ]]; then
+    echo
+    printf '%s╭──────────────────── HEADS-UP ─────────────────────╮%s\n' "$MAIZE" "$RESET"
+    printf '%s│%s  You are connected through this robot'"'"'s Wi-Fi.\n' "$MAIZE" "$RESET"
+    printf '%s│%s  In about %ss this SSH session will FREEZE or DROP.\n' "$MAIZE" "$RESET" "$MW_DETACH_GRACE"
+    printf '%s│%s  That is expected.\n' "$MAIZE" "$RESET"
+    printf '%s│%s\n' "$MAIZE" "$RESET"
+    printf '%s│%s  %sSuccess%s  the OLED shows a new campus IP. Put your laptop\n' "$MAIZE" "$RESET" "$SUCCESS" "$RESET"
+    printf '%s│%s           on MWireless and SSH to that IP.\n' "$MAIZE" "$RESET"
+    printf '%s│%s  %sFailure%s  the hotspot returns within 1 to 2 min. Reconnect\n' "$MAIZE" "$RESET" "$MAIZE$BOLD" "$RESET"
+    printf '%s│%s           and run: sudo %s --status\n' "$MAIZE" "$RESET" "$PROG"
+    printf '%s╰───────────────────────────────────────────────────╯%s\n' "$MAIZE" "$RESET"
+    if [[ "$assume_yes" -eq 0 && -t 0 ]]; then
+      local answer
+      printf '\n  %s›%s Continue? %s[Y/n]%s: ' "$MAIZE" "$RESET" "$MAIZE" "$RESET"
+      read -r answer
+      [[ "${answer:-y}" =~ ^[Yy] ]] || die "Aborted."
+    fi
+  fi
+  step "4/4" "CONNECT"
+
+  # 5. Save the profile(s), then forget the password from memory.
+  save_profile "$MW_CON_NAME" "$MW_SSID" "$MW_PRIORITY" "$identity" "$PASS_IN"
+  if [[ "$also_eduroam" == yes ]]; then
+    save_profile "eduroam" "eduroam" $((MW_PRIORITY - 10)) "$identity" "$PASS_IN"
+  fi
+  PASS_IN=""
+
+  # 6. Connect — right here (--foreground) or as a background job (normal).
+  if [[ "$foreground" -eq 1 ]]; then
+    echo -n "$previous" >"$PREV_CON_FILE"
+    save_status CONNECTING "" ""
+    MW_DETACH_GRACE=0 connect_now
+    return
+  fi
+  start_background_connect "$previous"
+  exec 9>&-          # release the lock so the background job can take it
+  show_progress
+}
+
+# ---- sudo mwireless-setup --status -------------------------------------------
+cmd_status() {
+  IFACE="$(find_wifi_card 2>/dev/null || echo '?')"
+  blue_row "$MAIZE" ''
+  blue_row "$MAIZE$BOLD" "  MWIRELESS STATUS  |  $(hostname)  |  $PROG $VERSION"
+  blue_row "$MAIZE" ''
+  local result hint
+  result="$(read_status RESULT)"
+  case "$result" in
+    OK) result="${SUCCESS}OK${RESET}" ;;
+    FAILED*) result="${MAIZE}${BOLD}${result}${RESET}" ;;
+  esac
+  key_value "Last result" "$result $(read_status REASON)  ($(read_status WHEN))"
+  hint="$(read_status HINT)"
+  [[ -n "$hint" ]] && key_value "Hint" "$hint"
+  key_value "Interface" "$IFACE  state=$(card_state "$IFACE" 2>/dev/null)  connection=$(connection_on "$IFACE")"
+  key_value "IPv4" "$(current_ipv4)"
+
+  if profile_exists "$MW_CON_NAME"; then
+    key_value "Profile" "$MW_CON_NAME  autoconnect=$(nmcli -g connection.autoconnect connection show id "$MW_CON_NAME" 2>/dev/null)  identity=$(nmcli -g 802-1x.identity connection show id "$MW_CON_NAME" 2>/dev/null)"
+  else
+    key_value "Profile" "(none). Run: sudo $PROG"
+  fi
+  key_value "Clock" "$(date)  NTP-synced=$(clock_is_synced && echo yes || echo no)"
+
+  # One line per certificate in the bundle: its name and expiry date.
+  if [[ -r "$MW_BUNDLE" ]]; then
+    local tmp cert name expires
+    tmp="$(mktemp -d)"
+    while read -r cert; do
+      name="$(openssl x509 -in "$cert" -noout -subject -nameopt multiline 2>/dev/null | awk -F' = ' '/commonName/ {print $2}')"
+      expires="$(openssl x509 -in "$cert" -noout -enddate 2>/dev/null | cut -d= -f2)"
+      key_value "CA" "$name  (expires $expires)"
+    done < <(split_certificates "$MW_BUNDLE" "$tmp")
+    rm -rf "$tmp"
+  fi
+  if [[ -r "$MW_STATE_DIR/cert-refresh-last" ]]; then
+    key_value "Cert refresh" "$(cat "$MW_STATE_DIR/cert-refresh-last")"
+  fi
+  return 0
+}
+
+# ---- sudo mwireless-setup --diagnose  (status + the relevant logs) -----------
+cmd_diagnose() {
+  cmd_status
+  echo
+  echo "${BOLD}--- nmcli device ---${RESET}"
+  nmcli device status 2>&1 || true
+  echo "${BOLD}--- visible MWireless BSSIDs ---${RESET}"
+  nmcli -f SSID,BSSID,CHAN,SIGNAL,SECURITY device wifi list 2>/dev/null | grep -E "SSID|$MW_SSID" \
+    || echo "  (none visible / scan unavailable in hotspot mode)"
+  echo "${BOLD}--- last 15 min: NetworkManager + wpa_supplicant (filtered) ---${RESET}"
+  journalctl -q --no-pager --since "-15min" -u NetworkManager -u wpa_supplicant 2>/dev/null \
+    | grep -iE "$MW_SSID|802-1x|eap|tls|cert|supplicant|state change|reason" | tail -n 80 || true
+  echo "${BOLD}--- $LOG_FILE (tail) ---${RESET}"
+  tail -n 40 "$LOG_FILE" 2>/dev/null || true
+}
+
+# ---- sudo mwireless-setup --forget -------------------------------------------
+cmd_forget() {
+  make_folders
+  take_lock
+  IFACE="$(find_wifi_card 2>/dev/null || true)"
+  delete_profiles_for "$MW_SSID"
+  if profile_exists "$MW_CON_NAME"; then nmcli connection delete id "$MW_CON_NAME" >/dev/null 2>&1 || true; fi
+  save_status FORGOTTEN "" "Run: sudo $PROG to set up again"
+  ok "MWireless profile deleted"
+  go_back_to_previous_network ""
+}
+
+# ---- --from-boot-config  (run at boot by mwireless-boot.service) -------------
+# Zero-touch setup: if the SD card's mbot_config.txt contains
+#   mwireless_user=rob550xx
+#   mwireless_password=...
+# then save the profile, WIPE the password line, and connect.
+cmd_from_boot_config() {
+  [[ -r "$MW_BOOT_CONFIG" ]] || exit 0
+
+  local user="" password="" key value
+  while IFS='=' read -r key value || [[ -n "$key" ]]; do
+    key="$(tr -d '[:space:]' <<<"$key")"
+    value="${value%$'\r'}"                       # files edited on Windows end lines with \r
+    value="${value#\"}"; value="${value%\"}"     # allow "quoted" values
+    case "$key" in
+      mwireless_user)     user="$value" ;;
+      mwireless_password) password="$value" ;;
+    esac
+  done <"$MW_BOOT_CONFIG"
+  [[ -n "$user" && -n "$password" ]] || exit 0   # nothing to import
+
+  make_folders
+  take_lock
+  info "Boot config: importing MWireless credentials for '$user' from $MW_BOOT_CONFIG"
+
+  # Wipe the password from the SD card straight away (keeps Windows line endings).
+  sed -i 's/^\([[:space:]]*mwireless_password[[:space:]]*=\)[^[:cntrl:]]*/\1/' "$MW_BOOT_CONFIG" && sync
+
+  ensure_bundle || exit 0
+  move_clock_forward_if_behind
+  save_profile "$MW_CON_NAME" "$MW_SSID" "$MW_PRIORITY" "$(make_identity "$user")" "$password"
+  password=""
+  MW_IN_BOOT=1 connect_now || true
+  exit 0
+}
+
+# ---- --wait-boot  (run by mbot-start-network before it starts the hotspot) ---
+# Gives a saved MWireless profile up to MW_BOOT_WAIT seconds to connect.
+# Returns quickly when there's nothing to wait for (e.g. at home).
+cmd_wait_boot() {
+  profile_exists "$MW_CON_NAME" || exit 0
+  [[ "$(nmcli -g connection.autoconnect connection show id "$MW_CON_NAME" 2>/dev/null)" == yes ]] || exit 0
+  IFACE="$(find_wifi_card 2>/dev/null)" || exit 0
+
+  local waited
+  for ((waited = 0; waited < MW_BOOT_WAIT; waited += 2)); do
+    [[ "$(card_state "$IFACE")" == 100 ]] && exit 0       # already connected
+    # After ~6 s, if MWireless isn't even visible, we're off campus: stop waiting.
+    if [[ $waited -eq 6 ]] && ! nmcli -t -f SSID device wifi list ifname "$IFACE" 2>/dev/null \
+                                 | grep -Fx -- "$MW_SSID" >/dev/null; then
+      exit 0
+    fi
+    sleep 2
+  done
+  exit 0
+}
+
+
+# =============================================================================
+# PART 11 — MAIN
+# Read the options, then run exactly one command.
+# =============================================================================
+main() {
+  local command=setup foreground=0 assume_yes=0 set_time="" also_eduroam="$MW_ALSO_EDUROAM" password_file=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -u|--user)           USER_IN="${2:?--user needs a value}"; shift 2 ;;
+      -p|--password-file)  password_file="${2:?--password-file needs a value}"; shift 2 ;;
+      --foreground)        foreground=1; shift ;;
+      --eduroam)           also_eduroam=yes; shift ;;
+      --iface)             MW_IFACE="${2:?--iface needs a value}"; shift 2 ;;
+      --time)              set_time="${2:?--time needs a value}"; shift 2 ;;
+      -y|--yes)            assume_yes=1; shift ;;
+      --status)            command=status; shift ;;
+      --diagnose)          command=diagnose; shift ;;
+      --forget)            command=forget; shift ;;
+      --refresh-certs)     command=refresh; shift ;;
+      --from-boot-config)  command=bootconfig; shift ;;   # used by mwireless-boot.service
+      --wait-boot)         command=waitboot; shift ;;     # used by mbot-start-network drop-in
+      --_connect-phase)    command=connect; shift ;;      # used by the background job
+      -V|--version)        echo "$PROG $VERSION"; exit 0 ;;
+      -h|--help)           usage; exit 0 ;;
+      *)                   usage >&2; die "Unknown option: $1" ;;
+    esac
+  done
+
+  require_root "${ORIGINAL_ARGS[@]}"
+
+  if [[ -n "$password_file" ]]; then
+    [[ -r "$password_file" ]] || die "Cannot read $password_file"
+    IFS= read -r PASS_IN <"$password_file" || true
+    PASS_IN="${PASS_IN%$'\r'}"
+  fi
+
+  case "$command" in
+    setup)      cmd_setup "$foreground" "$assume_yes" "$set_time" "$also_eduroam" ;;
+    status)     cmd_status ;;
+    diagnose)   cmd_diagnose ;;
+    forget)     cmd_forget ;;
+    refresh)    make_folders; take_lock; refresh_certs ;;
+    bootconfig) cmd_from_boot_config ;;
+    waitboot)   cmd_wait_boot ;;
+    connect)
+      # The background job: wait (up to 30 s) for the setup command to release the lock.
+      make_folders
+      exec 9>"$LOCK_FILE"
+      flock -w 30 9 || true
+      connect_now
+      ;;
+  esac
+}
+
+ORIGINAL_ARGS=("$@")   # kept so require_root can re-run us with sudo
+main "$@"

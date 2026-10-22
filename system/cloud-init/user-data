@@ -1,0 +1,6 @@
+#cloud-config
+# MBot server image. Installed to /boot/firmware/user-data.
+# The mbot user is created when the image is built, so no user or password is set here.
+# This file is readable on any computer that reads the SD card. Do not put secrets in it.
+ssh_pwauth: true
+preserve_hostname: true

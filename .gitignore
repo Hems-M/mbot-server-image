@@ -1,0 +1,7 @@
+# Image builds write their reports here
+results/
+# Built website
+website/_build/
+__pycache__/
+*.pyc
+.DS_Store

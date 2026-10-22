@@ -1,0 +1,24 @@
+# MBot micro-ROS agent, system layer version (D-05, ROS-004).
+# Replaces the upstream unit from mbot_sys_utils, which runs the agent from
+# ~/microros_ws through bash. This one runs the pinned agent in /opt/mbot/microros
+# with the shared environment in /etc/mbot/ros.env.
+# Started by the upstream udev rule (SYSTEMD_WANTS) when /dev/mbot_microros appears.
+
+[Unit]
+Description=MBot micro-ROS agent
+After=dev-mbot_microros.device
+BindsTo=dev-mbot_microros.device
+
+[Service]
+Type=simple
+User=mbot
+EnvironmentFile=/etc/mbot/ros.env
+# Let the USB serial device settle after enumeration (same as upstream).
+ExecStartPre=/bin/sleep 1
+ExecStart=/opt/mbot/bin/mbot-ros-exec /opt/mbot/microros/lib/micro_ros_agent/micro_ros_agent serial --dev /dev/mbot_microros --baudrate 115200
+Restart=always
+RestartSec=3
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target

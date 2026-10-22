@@ -1,0 +1,16 @@
+# Fallback: create SSH host keys if none exist when SSH is about to start.
+# cloud-init normally creates new keys on the first boot of each flashed card (OS-005).
+# This unit only acts if that did not happen, so SSH is never left without keys.
+
+[Unit]
+Description=Create SSH host keys if missing (MBot first boot fallback)
+After=cloud-init.service
+Before=ssh.service
+ConditionPathExists=!/etc/ssh/ssh_host_ed25519_key
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/ssh-keygen -A
+
+[Install]
+WantedBy=multi-user.target

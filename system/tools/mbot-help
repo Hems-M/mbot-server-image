@@ -1,0 +1,193 @@
+#!/bin/bash
+# MBot command guide. Installed to /usr/local/bin/mbot-help (also: mbot help, mbot --help).
+#
+# Usage: mbot-help                overview and the most used commands
+#        mbot-help <topic>        one topic (start network firmware ros code build
+#                                 sensors viz data fix)
+#        mbot-help all            every topic
+#        mbot-help find <word>    search the full manual
+#        mbot-help manual         the full manual (~/MBOT_COMMANDS.md)
+
+# shellcheck source=../lib/mbot-theme.sh
+. /opt/mbot/lib/mbot-theme.sh 2>/dev/null || . "$(dirname "$0")/../lib/mbot-theme.sh"
+
+MANUAL=/opt/mbot/share/MBOT_COMMANDS.md
+TOPICS=(start network firmware ros code build sensors viz data fix)
+
+topic_start() {
+    section START "First steps on a new robot"
+    cmd "mbot health" "Full health report: network, robot, battery, system, services"
+    cmd "mbot health --live" "Same, updated every second (Ctrl+C to quit)"
+    cmd "hostname -I" "IP addresses of this robot"
+    cmd "passwd" "Change your password (do this once)"
+    cmd "mbot-help <topic>" "More commands for one topic (list: mbot-help)"
+    cmd "sudo reboot" "Restart the robot"
+    cmd "sudo poweroff" "Shut down before you switch the power off"
+}
+
+topic_network() {
+    section NETWORK "Wi-Fi, MWireless and SSH"
+    cmd "sudo mwireless-setup" "Connect to MWireless with the course account"
+    cmd "sudo mwireless-setup --status" "Last result, IP address, certificate and clock"
+    cmd "sudo mwireless-setup --forget" "Remove MWireless and go back to the hotspot"
+    cmd "timedatectl" "Clock and time sync (MWireless needs the right date)"
+    cmd "nmcli device wifi list" "Wi-Fi networks in range"
+    cmd "nmcli connection show" "Saved networks"
+    note "Home Wi-Fi: set new_wifi_ssid and new_wifi_password in"
+    note "/boot/firmware/mbot_config.txt, then: sudo reboot"
+    note "On your laptop, after flashing a new card:  ssh-keygen -R <robot IP>"
+}
+
+topic_firmware() {
+    section FIRMWARE "Build and flash the Pico control board"
+    cmd "cd ~/mbot_firmware_ros/build && cmake .. && make" "Build all firmware files (.uf2)"
+    cmd "sudo mbot-upload-firmware flash mbot_calibrate_classic.uf2" "Calibrate (robot on the floor, wait until it stops)"
+    cmd "sudo mbot-upload-firmware flash mbot_classic_ros.uf2" "Flash the ROS firmware"
+    cmd "sudo minicom -D /dev/mbot_debug -b 115200" "Firmware status table. Quit: Ctrl+A, then X, Enter"
+    cmd "ls -l /dev/mbot_*" "Pico USB ports: mbot_microros and mbot_debug"
+    note "Keep the green/white wire from the Pi to the control board unplugged."
+    note "If asked: hold RST + BOOTSEL, release RST, then BOOTSEL. It flashes by itself."
+}
+
+topic_ros() {
+    section "ROS 2" "See what is running"
+    cmd "ros2 topic list" "All topics"
+    cmd "ros2 topic hz /scan" "How often a topic is published"
+    cmd "ros2 topic echo /odom --once" "Print one message"
+    cmd "ros2 topic info -v /cmd_vel" "Who publishes and who subscribes, with QoS"
+    cmd "ros2 node list" "All nodes"
+    cmd "ros2 node info /<node>" "Topics, services and parameters of one node"
+    cmd "ros2 service list" "All services"
+    cmd "ros2 param list /<node>" "Parameters of a node"
+    cmd "ros2 param get /<node> <name>" "Value of one parameter"
+    cmd "ros2 run teleop_twist_keyboard teleop_twist_keyboard" "Drive with the keyboard (x slows down)"
+}
+
+topic_code() {
+    section CODE "Understand the code and the messages"
+    cmd "ros2 interface show mbot_interfaces/msg/Encoders" "Fields of a message type"
+    cmd "ros2 interface list | grep mbot" "All MBot message and service types"
+    cmd "ros2 pkg executables mbot_nav" "Programs in a package (what ros2 run accepts)"
+    cmd "ros2 launch mbot_bringup mbot_bringup.launch.py --show-args" "Arguments a launch file accepts"
+    cmd "ros2 pkg prefix mbot_slam" "Which build of a package is used (workspace or /opt/ros)"
+    cmd "colcon list" "Packages in the workspace you are in"
+    cmd "grep -rn \"TODO\" ~/mbot_ros_labs/src" "Find the parts you have to write"
+    cmd "grep -rn \"create_subscription\" ~/mbot_ros_labs/src" "Find which code listens to which topic"
+    cmd "ros2 run tf2_tools view_frames" "TF tree as frames.pdf (open it in VS Code)"
+    cmd "ros2 doctor --report" "Summary of the ROS setup and network"
+}
+
+topic_build() {
+    section BUILD "Build your workspaces"
+    cmd "cd ~/mbot_ws && colcon build --symlink-install" "Build mbot_ws (drivers, messages, robot model)"
+    cmd "colcon build --packages-select mbot_nav" "Build one package (run in the workspace folder)"
+    cmd "source install/setup.bash" "Use the new build: after every build, in every terminal"
+    cmd "rosdep install -y --from-paths src --ignore-src --rosdistro \$ROS_DISTRO --skip-keys=libcamera" "Install what the packages need"
+    cmd "rosdep update" "If rosdep says it is not initialized"
+    cmd "colcon build --parallel-workers 1" "If a build runs out of memory"
+    cmd "rm -rf build install log" "Start over (in the workspace folder), then build again"
+}
+
+topic_sensors() {
+    section SENSORS "LiDAR, camera and odometry"
+    cmd "ros2 launch mbot_bringup mbot_bringup.launch.py" "LiDAR, robot model and TF. Start it in one terminal only"
+    cmd "ros2 service call /lidar_power std_srvs/srv/SetBool \"{data: false}\"" "LiDAR off (data: true turns it on)"
+    cmd "ros2 service call /reset_odometry std_srvs/srv/Trigger" "Set odometry back to zero"
+    cmd "rpicam-hello --list-cameras" "Is the camera detected?"
+    cmd "rpicam-still -n -t 1 -o ~/test.jpg" "Take a photo (open it in VS Code)"
+    cmd "ros2 launch mbot_vision camera.launch.py" "Camera topics /camera/image_raw and /camera/camera_info"
+    note "Never plug or unplug the camera while the robot is on."
+    note "Calibration window: camera node running first, then ssh -Y from the laptop"
+    note "(Mac: XQuartz, log out and in once). On the robot, echo \$DISPLAY shows localhost:10.0"
+}
+
+topic_viz() {
+    section VIZ "Foxglove (replaces RViz and rqt)"
+    cmd "ros2 launch foxglove_bridge foxglove_bridge_launch.xml" "Start the Foxglove bridge (port 8765)"
+    cmd "ros2 launch mbot_bringup mbot_bringup.launch.py" "Second terminal: LiDAR /scan and robot model"
+    cmd "mbot-viz" "Same bridge; prints the address, checks LiDAR"
+    note "In Foxglove: Open connection > Foxglove WebSocket > ws://<IP>:8765"
+    note "No LiDAR in 3D? Bringup running? Panel settings > Topics > /scan on."
+    note "One bridge and one bringup only. A second one fails (Address already in use)."
+    note "Stop the bridge with Ctrl+C: while it runs, anyone on the network can drive the robot."
+}
+
+topic_data() {
+    section DATA "Record data and copy files"
+    cmd "ros2 bag record -o run1 /scan /odom /tf /tf_static" "Record topics to the folder run1"
+    cmd "ros2 bag info run1" "Topics, duration and message counts of a bag"
+    cmd "ros2 bag play run1" "Play a bag back"
+    cmd "scp -r mbot@<IP>:~/run1 ." "On your laptop: copy a folder from the robot"
+    cmd "tmux new -s work" "Session that keeps running when SSH drops"
+    cmd "tmux attach -t work" "Go back to it (detach: Ctrl+B, then D)"
+}
+
+topic_fix() {
+    section FIX "When something does not work"
+    cmd "mbot health" "Everything the robot knows, and what to do (same checks as the OLED)"
+    cmd "mbot health --brief" "Only the problems"
+    cmd "mbot health --live" "Live view, every second, with a log of what changed"
+    cmd "mbot report" "One file with health, logs and settings to send to the GSIs"
+    cmd "journalctl -u mbot-microros-agent -b" "Log of the micro-ROS agent (link to the Pico)"
+    cmd "journalctl -u mbot-oled -b" "Log of the OLED display"
+    cmd "sudo systemctl restart mbot-microros-agent" "Restart the link to the Pico"
+    cmd "cat /var/log/mbot/mbot_start_networking.log" "What the robot did with Wi-Fi at boot"
+    cmd "df -h /" "Free disk space"
+    cmd "du -sh ~/*" "What uses the space in your home folder"
+    cmd "i2cdetect -y 1" "OLED answers at address 3c"
+    cmd "sudo apt install /opt/mbot/share/mbot-camera-ros-placeholder.deb" "Camera 'symbol lookup error ... libpisp': undo ros-jazzy-camera-ros"
+}
+
+overview() {
+    mbot_banner "Command guide for the MBot server image"
+    section TOPICS "mbot-help <topic>"
+    cmd "start" "First steps on a new robot" 12
+    cmd "network" "Wi-Fi, MWireless and SSH" 12
+    cmd "firmware" "Build and flash the Pico control board" 12
+    cmd "ros" "See what is running: topics, nodes, services" 12
+    cmd "code" "Understand the code and the messages" 12
+    cmd "build" "Build your workspaces" 12
+    cmd "sensors" "LiDAR, camera and odometry" 12
+    cmd "viz" "Foxglove" 12
+    cmd "data" "Record bags and copy files" 12
+    cmd "fix" "When something does not work" 12
+    section "MOST USED" ""
+    cmd "mbot health" "Is everything working? Battery, heat, RAM, disk, network, Pico"
+    cmd "sudo mwireless-setup" "Connect to MWireless"
+    cmd "mbot-viz" "Start Foxglove"
+    cmd "ros2 launch mbot_bringup mbot_bringup.launch.py" "LiDAR, robot model, TF"
+    cmd "ros2 run teleop_twist_keyboard teleop_twist_keyboard" "Drive"
+    printf '\n    %sFull manual: mbot-help manual    Search: mbot-help find <word>%s\n\n' "$SOFT" "$RESET"
+}
+
+case "${1:-}" in
+    "" | -h | --help | help)
+        overview
+        ;;
+    all)
+        mbot_banner "Command guide for the MBot server image"
+        for t in "${TOPICS[@]}"; do "topic_$t"; done
+        echo
+        ;;
+    manual)
+        [[ -r "$MANUAL" ]] || { echo "Manual not found: $MANUAL" >&2; exit 1; }
+        if [[ -t 1 ]]; then exec less -FRX "$MANUAL"; fi
+        cat "$MANUAL"
+        ;;
+    find | search)
+        shift
+        [[ $# -gt 0 ]] || { echo "Usage: mbot-help find <word>" >&2; exit 2; }
+        awk -v w="$*" 'BEGIN { w = tolower(w) }
+            /^#/ { head = $0 }
+            index(tolower($0), w) { if (head != shown) { print "\n" head; shown = head } print }' "$MANUAL"
+        ;;
+    *)
+        if declare -F "topic_$1" >/dev/null; then
+            "topic_$1"
+            echo
+        else
+            echo "Unknown topic: $1. Topics: ${TOPICS[*]}" >&2
+            exit 2
+        fi
+        ;;
+esac

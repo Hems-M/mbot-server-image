@@ -1,0 +1,26 @@
+#!/bin/sh
+# MBot summary in the SSH login message. Installed to /etc/update-motd.d/99-mbot.
+# Runs as root at login; keep it fast and offline.
+
+release="$(head -n 1 /etc/mbot/image-release 2>/dev/null)"
+ips="$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -v ':' | tr '\n' ' ')"
+
+state() {
+    if systemctl is-active --quiet "$1"; then echo "running"; else echo "NOT running"; fi
+}
+
+echo
+echo " MBot $(hostname)   server image ${release:-unknown}"
+echo " IP address : ${ips:-none}"
+echo " Agent      : $(state mbot-microros-agent)   OLED: $(state mbot-oled)"
+if [ -e /dev/mbot_microros ]; then
+    echo " Pico       : connected"
+else
+    echo " Pico       : not found on USB"
+fi
+echo
+echo " Health report : mbot health    (battery, heat, RAM, disk, network, Pico)"
+echo " Command guide : mbot --help    (or open ~/MBOT_COMMANDS.md)"
+echo " Visualize     : mbot-viz       (Foxglove bridge on port 8765)"
+echo " Wi-Fi         : sudo mwireless-setup"
+echo

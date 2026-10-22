@@ -1,0 +1,111 @@
+#!/bin/bash
+# Collect everything a GSI needs to help with a robot problem into one file.
+# Installed to /usr/local/bin/mbot-report (also: mbot report).
+#
+# Usage: mbot-report [output folder]     (default: the home folder)
+#
+# The file has: mbot health, image and kernel, hardware (Pico, USB, I2C, camera, fan,
+# power), memory and disk, network, ROS nodes and topics, and the logs of this boot and
+# the previous one. Passwords from mbot_config.txt are removed from every file, and no
+# Wi-Fi profiles or SSH keys are copied. Runs without sudo (mbot is in group adm).
+
+out_dir="${1:-$HOME}"
+host="$(hostname)"
+stamp="$(date +%Y%m%d-%H%M)"
+name="mbot-report-${host}-${stamp}"
+work="$(mktemp -d)"
+dir="$work/$name"
+mkdir -p "$dir/logs"
+trap 'rm -rf "$work"' EXIT
+
+step() { printf '  %s\n' "$1"; }
+
+# Run a command with a time limit and write its output under a heading.
+run() {
+    local file="$1"; shift
+    {
+        echo "\$ $*"
+        timeout 15 "$@" 2>&1
+        echo
+    } >> "$dir/$file"
+}
+
+echo "Collecting the MBot report (about 30 seconds)..."
+
+step "health"
+mbot-status --no-color > "$dir/health.txt" 2>&1
+
+step "image and system"
+run system.txt cat /etc/mbot/image-release
+run system.txt cat /etc/os-release
+run system.txt uname -a
+run system.txt uptime
+run system.txt free -m
+run system.txt df -h / /boot/firmware
+run system.txt top -b -n 1 -o %MEM -w 160
+run system.txt systemctl --failed --no-pager
+
+step "hardware"
+run hardware.txt cat /proc/device-tree/model
+run hardware.txt sh -c 'cat /sys/devices/platform/soc*/soc*:firmware/get_throttled 2>/dev/null || cat /sys/devices/platform/soc/soc:firmware/get_throttled'
+# shellcheck disable=SC2016  # expanded by sh -c
+run hardware.txt sh -c 'for z in /sys/class/thermal/thermal_zone*; do echo "$(cat $z/type): $(cat $z/temp)"; done'
+# shellcheck disable=SC2016
+run hardware.txt sh -c 'for d in /sys/class/hwmon/hwmon*; do echo "$d $(cat $d/name) pwm1=$(cat $d/pwm1 2>/dev/null) fan1_input=$(cat $d/fan1_input 2>/dev/null)"; done'
+run hardware.txt lsusb
+run hardware.txt ls -l /dev/mbot_debug /dev/mbot_microros /dev/ttyACM0 /dev/ttyACM1
+run hardware.txt i2cdetect -y 1
+run hardware.txt rpicam-hello --list-cameras
+
+step "network"
+run network.txt ip -br addr
+run network.txt ip route
+run network.txt nmcli device status
+run network.txt nmcli -f NAME,TYPE,DEVICE,AUTOCONNECT connection show
+run network.txt iw dev wlan0 link
+run network.txt timedatectl
+# mbot_config.txt without its passwords.
+if [[ -r /boot/firmware/mbot_config.txt ]]; then
+    sed -E 's/^([^#=]*(password|psk|secret|identity)[^=]*)=.*/\1=<removed>/I' \
+        /boot/firmware/mbot_config.txt > "$dir/mbot_config.txt"
+fi
+
+step "ROS"
+run ros.txt printenv ROS_DISTRO ROS_DOMAIN_ID ROS_AUTOMATIC_DISCOVERY_RANGE
+run ros.txt ros2 node list
+run ros.txt ros2 topic list -t
+
+step "logs"
+for unit in mbot-microros-agent mbot-oled mbot-start-network NetworkManager; do
+    journalctl -b -u "$unit" --no-pager -n 500 > "$dir/logs/$unit.txt" 2>&1
+done
+journalctl -k -b --no-pager -n 1000 > "$dir/logs/kernel.txt" 2>&1
+journalctl -b -p warning --no-pager -n 500 > "$dir/logs/warnings-this-boot.txt" 2>&1
+# The previous boot shows what happened before a crash, freeze or overheating.
+journalctl -b -1 -p warning --no-pager -n 500 > "$dir/logs/warnings-previous-boot.txt" 2>&1
+for f in /var/log/mbot/*.log; do
+    [[ -r "$f" ]] && tail -n 500 "$f" > "$dir/logs/$(basename "$f").txt"
+done
+
+# Remove the actual password values wherever they might appear.
+if [[ -r /boot/firmware/mbot_config.txt ]]; then
+    grep -iE '^[^#=]*(password|psk|secret)[^=]*=' /boot/firmware/mbot_config.txt | cut -d= -f2- |
+        while IFS= read -r secret; do
+            [[ ${#secret} -ge 4 ]] || continue
+            grep -rlF -- "$secret" "$dir" | while IFS= read -r f; do
+                python3 -c 'import sys; p, s = sys.argv[1], sys.argv[2]
+t = open(p, encoding="utf-8", errors="replace").read()
+open(p, "w", encoding="utf-8").write(t.replace(s, "<removed>"))' "$f" "$secret"
+            done
+        done
+fi
+
+mkdir -p "$out_dir"
+tar -czf "$out_dir/$name.tar.gz" -C "$work" "$name" || { echo "Could not write $out_dir/$name.tar.gz" >&2; exit 1; }
+size="$(du -h "$out_dir/$name.tar.gz" | cut -f1)"
+ip="$(hostname -I | awk '{print $1}')"
+echo
+echo "Report: $out_dir/$name.tar.gz ($size)"
+echo "Copy it to your laptop (run this on the laptop), then send it to the GSIs:"
+echo "    scp mbot@${ip:-<robot IP>}:$out_dir/$name.tar.gz ."
+echo "It contains no passwords, Wi-Fi profiles or SSH keys."

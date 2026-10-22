@@ -1,0 +1,29 @@
+# MBot OLED status display, new service (D-17). Code: system/oled/, installed to /opt/mbot/oled.
+# Replaces the upstream unit, which ran mbot_ros_oled_display.py through bash -i and ~/.bashrc.
+# - no ~/.bashrc and no student workspace (findings W1, W3): ROS from /etc/mbot/ros.env and
+#   mbot_interfaces from /opt/mbot/ros, so the battery shows before the student builds anything
+# - starts early and does not wait for network-online.target (finding W9): the boot
+#   animation runs while the network comes up
+# - keeps running when the OLED is missing and retries (it never exits on its own)
+# Logs: journalctl -u mbot-oled. Turn the animation off with oled_animation=off in
+# /boot/firmware/mbot_config.txt.
+
+[Unit]
+Description=MBot OLED status display
+After=local-fs.target systemd-udevd.service systemd-modules-load.service
+
+[Service]
+Type=simple
+User=mbot
+EnvironmentFile=/etc/mbot/ros.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+# ROS logs outside the student home (D-05); /var/log/mbot is writable by group mbot.
+Environment=ROS_LOG_DIR=/var/log/mbot/ros
+WorkingDirectory=/opt/mbot/oled
+ExecStart=/opt/mbot/bin/mbot-ros-exec /usr/bin/python3 -m mbot_oled
+Restart=always
+RestartSec=5
+Nice=5
+
+[Install]
+WantedBy=multi-user.target

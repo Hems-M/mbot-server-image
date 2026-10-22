@@ -1,0 +1,54 @@
+# Applied by image/build/30-mbot-system.sh to the installed copy of
+# upstream mbot_sys_utils/ros2_mbot_sys_utils/services/mbot_start_networking.sh.
+# The upstream file is not changed. See docs/build-notes.md P-38.
+
+--- a/mbot_start_networking.sh
++++ b/mbot_start_networking.sh
+@@ -113,29 +113,20 @@
+ 
+ sleep 0.1
+ 
+-case "$autostart" in
+-    run)
+-        sudo gpioset "$GPIO_CHIP" "$RUN_PIN"=0
+-        sudo gpioset "$GPIO_CHIP" "$BTLD_PIN"=1
+-        sleep 0.1
+-        sudo gpioset "$GPIO_CHIP" "$RUN_PIN"=1
+-        sleep 0.1
+-        echo "Autostart is set to run" | tee -a "$log_file"
+-        ;;
+-    bootload)
+-        sudo gpioset "$GPIO_CHIP" "$BTLD_PIN"=0
+-        sudo gpioset "$GPIO_CHIP" "$RUN_PIN"=0
+-        sleep 0.1
+-        sudo gpioset "$GPIO_CHIP" "$RUN_PIN"=1
+-        echo "Autostart is set to bootload" | tee -a "$log_file"
+-        ;;
+-    disable)
+-        sudo gpioset "$GPIO_CHIP" "$BTLD_PIN"=1
+-        sudo gpioset "$GPIO_CHIP" "$RUN_PIN"=0
+-        sleep 0.1
+-        echo "Autostart is disabled" | tee -a "$log_file"
+-        ;;
+-    *)
+-        echo "Incorrect input for autostart variable, should be either run or disable" | tee -a "$log_file"
+-        ;;
+-esac
+\ No newline at end of file
++# MBot server image: the Pi no longer drives the Pico RUN and BOOTSEL lines
++# (GPIO 17 and 4). Driven as outputs, pressing BOOTSEL or RST on the control board
++# shorted the Pi's GPIO through the white/green cable. Both pins are set to
++# inputs with no pull, so a cable left plugged in by mistake cannot source or
++# sink current. The Pico starts on its own; flashing uses USB (mbot-upload-firmware).
++release_pico_pins() {
++    local chip
++    chip=$(gpiodetect 2>/dev/null | awk '/pinctrl-rp1/ {print $1; exit}')
++    [ -n "$chip" ] || chip="$GPIO_CHIP"
++    # Reading a line makes it an input. libgpiod 1.6 syntax.
++    gpioget --bias=disable "$chip" "$BTLD_PIN" "$RUN_PIN" >/dev/null 2>&1
++}
++if release_pico_pins; then
++    echo "Pico RUN/BOOTSEL pins set to input (autostart=$autostart is no longer used)" | tee -a "$log_file"
++else
++    echo "Could not set the Pico RUN/BOOTSEL pins to input" | tee -a "$log_file"
++fi

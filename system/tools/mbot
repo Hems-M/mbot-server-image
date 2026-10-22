@@ -1,0 +1,33 @@
+#!/bin/bash
+# The mbot command: short names for the MBot tools. Installed to /usr/local/bin/mbot.
+#
+# Usage: mbot --help | mbot help [topic]   command guide (mbot-help)
+#        mbot health | mbot status         everything the robot knows about itself (mbot-status)
+#        mbot health --live                the same, updated every second, with an event log
+#        mbot report [folder]              one file with health, logs and settings for the GSIs
+#        mbot viz [port]                   Foxglove bridge (mbot-viz)
+#        mbot wifi [options]               MWireless setup (sudo mwireless-setup)
+#        mbot version                      image release
+
+# shellcheck source=../lib/mbot-theme.sh
+. /opt/mbot/lib/mbot-theme.sh 2>/dev/null || . "$(dirname "$0")/../lib/mbot-theme.sh"
+
+sub="${1:-help}"
+[[ $# -gt 0 ]] && shift
+
+case "$sub" in
+    -h | --help | help) exec mbot-help "$@" ;;
+    status | health) exec mbot-status "$@" ;;
+    viz) exec mbot-viz "$@" ;;
+    report) exec mbot-report "$@" ;;
+    wifi) exec sudo mwireless-setup "$@" ;;
+    version | -V | --version)
+        printf '%sMBot server image%s %s\n' "$MAIZE$BOLD" "$RESET" "$(head -n 1 /etc/mbot/image-release 2>/dev/null || echo unknown)"
+        printf '%s%s%s\n' "$SOFT" "$(. /etc/os-release && echo "$PRETTY_NAME"), ROS 2 ${ROS_DISTRO:-jazzy}" "$RESET"
+        ;;
+    *)
+        echo "Unknown command: mbot $sub" >&2
+        echo "Commands: help, health, report, viz, wifi, version. Guide: mbot --help" >&2
+        exit 2
+        ;;
+esac

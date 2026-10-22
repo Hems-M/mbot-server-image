@@ -1,0 +1,7 @@
+# MBot server image: never install Ubuntu's libcamera packages (OS-008, risk R-H2).
+# The Pi 5 camera needs the Raspberry Pi libcamera build in /usr/local. Ubuntu's packages
+# would hide it and cause "no cameras available".
+# Installed to /etc/apt/preferences.d/mbot-block-ubuntu-libcamera.
+Package: libcamera* python3-libcamera gstreamer1.0-libcamera libpisp* rpicam-apps* libcamera-apps*
+Pin: release o=Ubuntu
+Pin-Priority: -1

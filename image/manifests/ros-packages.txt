@@ -1,0 +1,73 @@
+# ROS 2 Jazzy packages installed by image/build/20-ros.sh (D-02, review section 5.2).
+# Format: <package> # <reason> [evidence]
+# Never add: ros-jazzy-desktop, ros-jazzy-rviz2, ros-jazzy-rqt*, ros-jazzy-image-pipeline,
+# ros-jazzy-navigation2, ros-jazzy-nav2-bringup (metapackages that pull GUI tools).
+# The GUI libraries each package pulls in are recorded by the build (ros-gui-deps.txt).
+# rc2: every member of navigation2 and image_pipeline that has no GUI is listed, so the
+# image has what the course image had except rviz2, rqt, nav2_rviz_plugins, image_view
+# and nav2_bringup (which pulls Gazebo; no MBot launch file uses it). [OLD] = on the course image.
+# Status: PROVISIONAL (rc2).
+
+ros-jazzy-ros-base                  # core: rclcpp, rclpy, CLI, launch, tf2, rosbag2, urdf [review 5.2]
+python3-colcon-common-extensions    # students build workspaces [DOCS]
+python3-rosdep                      # students run rosdep install [DOCS]
+python3-vcstool                     # workspace tooling [review 5.2]
+ros-jazzy-rosbag2-storage-mcap      # course bags are MCAP (maze1.mcap) [CODE]
+ros-jazzy-xacro                     # mbot_bringup.launch.py imports xacro [CODE]
+ros-jazzy-joint-state-publisher     # started by mbot_bringup (not the GUI version) [CODE]
+ros-jazzy-robot-state-publisher     # started by mbot_bringup [CODE]
+ros-jazzy-teleop-twist-keyboard     # driving in setup and checkpoints [DOCS]
+ros-jazzy-tf-transformations        # installed today; keep until confirmed unused [review 5.2]
+ros-jazzy-tf2-geometry-msgs         # mbot_nav and mbot_slam depend on it [CODE]
+ros-jazzy-tf2-tools                 # view_frames writes a PDF without a display [review 7.2]
+ros-jazzy-nav2-msgs                 # mbot_slam and mbot_navigation [CODE]
+ros-jazzy-nav2-map-server           # lab launch files, map_saver_cli [CODE]
+ros-jazzy-nav2-lifecycle-manager    # lab launch files [CODE]
+ros-jazzy-nav2-amcl                 # mbot_navigation localization_launch.py [CODE]
+ros-jazzy-nav2-planner              # mbot_navigation navigation_launch.py planner_server [CODE]
+ros-jazzy-nav2-controller           # mbot_navigation navigation_launch.py controller_server [CODE]
+ros-jazzy-nav2-behaviors            # mbot_navigation navigation_launch.py behavior_server [CODE]
+ros-jazzy-nav2-bt-navigator         # mbot_navigation navigation_launch.py bt_navigator [CODE]
+ros-jazzy-nav2-waypoint-follower    # mbot_navigation navigation_launch.py waypoint_follower [CODE]
+ros-jazzy-nav2-costmap-2d           # nav2_params.yaml costmap layers [CODE]
+ros-jazzy-nav2-theta-star-planner   # nav2_params.yaml GridBased planner plugin [CODE]
+ros-jazzy-nav2-graceful-controller  # nav2_params.yaml FollowPath controller plugin [CODE]
+ros-jazzy-slam-toolbox              # mbot_navigation slam launch files, slam_toolbox guide [CODE] [DOCS]
+ros-jazzy-nav2-core                 # [OLD] navigation2 member
+ros-jazzy-nav2-util                 # [OLD] navigation2 member
+ros-jazzy-nav2-behavior-tree        # [OLD] navigation2 member
+ros-jazzy-nav2-voxel-grid           # [OLD] navigation2 member
+ros-jazzy-nav2-collision-monitor    # [OLD] navigation2 member
+ros-jazzy-nav2-constrained-smoother # [OLD] navigation2 member
+ros-jazzy-nav2-dwb-controller       # [OLD] navigation2 member (DWB local planner)
+ros-jazzy-nav2-mppi-controller      # [OLD] navigation2 member
+ros-jazzy-nav2-navfn-planner        # [OLD] navigation2 member (default global planner)
+ros-jazzy-nav2-regulated-pure-pursuit-controller # [OLD] navigation2 member
+ros-jazzy-nav2-rotation-shim-controller # [OLD] navigation2 member
+ros-jazzy-nav2-smac-planner         # [OLD] navigation2 member
+ros-jazzy-nav2-smoother             # [OLD] navigation2 member
+ros-jazzy-nav2-velocity-smoother    # [OLD] navigation2 member
+ros-jazzy-nav2-simple-commander     # [OLD] navigation2 member; Python navigation API for student scripts
+ros-jazzy-nav2-route                # navigation2 member (newer than the course image)
+ros-jazzy-opennav-docking           # [OLD] navigation2 member
+ros-jazzy-opennav-docking-bt        # [OLD] navigation2 member
+ros-jazzy-opennav-docking-core      # [OLD] navigation2 member
+ros-jazzy-nav2-common               # [OLD] launch helpers used by Nav2 examples
+ros-jazzy-foxglove-bridge           # visualization without a desktop (D-10), started on demand by mbot-viz
+ros-jazzy-image-transport           # camera topics [CODE: mbot_vision]
+ros-jazzy-image-transport-plugins   # compressed images for Foxglove over Wi-Fi [CODE: mbot_vision]
+ros-jazzy-image-proc                # camera_rectify.launch.py [CODE]
+ros-jazzy-camera-info-manager       # camera_ros build dependency [CODE]
+ros-jazzy-apriltag-ros              # apriltag.launch.py, competition [CODE] [DOCS]
+ros-jazzy-apriltag-msgs             # mbot_vision [CODE]
+ros-jazzy-cv-bridge                 # mbot_vision Python nodes, camera_ros [CODE]
+ros-jazzy-vision-opencv             # mbot_vision [CODE]
+ros-jazzy-camera-calibration        # Checkpoint 4.1 calibration (D-11, kept on the robot) [DOCS]
+ros-jazzy-depth-image-proc          # [OLD] image_pipeline member
+ros-jazzy-image-publisher           # [OLD] image_pipeline member
+ros-jazzy-image-rotate              # [OLD] image_pipeline member
+ros-jazzy-stereo-image-proc         # [OLD] image_pipeline member
+ros-jazzy-vision-msgs               # [OLD] detection messages for vision work
+ros-jazzy-ament-cmake-clang-format  # rosdep key of camera_ros tests; saves a student download (G-13)
+ros-jazzy-ament-cmake-mypy          # rosdep key of camera_ros tests (G-13)
+ros-jazzy-ament-cmake-pyflakes      # rosdep key of camera_ros tests (G-13)
