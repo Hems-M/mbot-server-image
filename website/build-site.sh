@@ -16,7 +16,13 @@ out="${MBOT_SITE_OUT:-$here/_build}"
 log() { printf '[%s build-site] %s\n' "$(date '+%H:%M:%S')" "$*"; }
 
 [[ -f "$src/_config.yml" ]] || { echo "website/rob550-docs is empty: run git submodule update --init" >&2; exit 1; }
-command -v docker >/dev/null || { echo "docker not found" >&2; exit 1; }
+command -v docker >/dev/null || { echo "Docker is needed to build the site: https://www.docker.com/products/docker-desktop/" >&2; exit 1; }
+docker info >/dev/null 2>&1 || {
+    echo "Docker is installed but not running. Start it, then run this again:" >&2
+    echo "    Docker Desktop: open the Docker app" >&2
+    echo "    Colima: colima start" >&2
+    exit 1
+}
 
 log "base: rob550-docs at $(git -C "$src" rev-parse --short HEAD)"
 rm -rf "$out/src"
