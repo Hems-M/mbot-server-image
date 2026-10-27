@@ -95,7 +95,6 @@ Then open http://localhost:4000/docs/botlab/mbot-system-setup-Pi5.html. More in 
 | `upstream/mbot_sys_utils` | mbot-project/mbot_sys_utils | v1.3.2 |
 | `upstream/mbot_ros2_ws` | mbot-project/mbot_ros2_ws | v1.0.4 |
 | `upstream/mbot_ros_labs` | mbot-project/mbot_ros_labs | `rob550/W26-student` |
-| `upstream/mbot_ros_labs_solution` | mbot-project/mbot_ros_labs | `rob550/W26-main` (only used to check that no solution code ends up in the image; never copied into it) |
 | `upstream/mbot_servo_lib` | mbot-project/mbot_servo_lib | main |
 | `upstream/mbot_vision` | mbot-project/mbot_vision | main |
 | `website/rob550-docs` | rob550-docs/rob550-docs.github.io | main, 2026-10-13 |

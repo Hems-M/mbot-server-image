@@ -18,10 +18,6 @@
 [submodule "upstream/mbot_vision"]
 	path = upstream/mbot_vision
 	url = https://github.com/mbot-project/mbot_vision.git
-[submodule "upstream/mbot_ros_labs_solution"]
-	path = upstream/mbot_ros_labs_solution
-	url = https://github.com/mbot-project/mbot_ros_labs.git
-	branch = rob550/W26-main
 [submodule "website/rob550-docs"]
 	path = website/rob550-docs
 	url = https://github.com/rob550-docs/rob550-docs.github.io.git
